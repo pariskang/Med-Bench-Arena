@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medeval"
+version = "0.1.0"
+description = "MedEval — a unified protocol for plugging medical/TCM eval datasets into any LLM or agent backend."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+datasets = ["datasets>=2.18"]
+litellm = ["litellm>=1.40"]
+poe = ["openai>=1.30"]
+hf = ["vllm", "transformers>=4.40", "torch", "peft"]
+# Everything that installs without a GPU:
+all = ["datasets>=2.18", "litellm>=1.40", "openai>=1.30"]
+
+[project.scripts]
+medeval = "medeval.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["medeval*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

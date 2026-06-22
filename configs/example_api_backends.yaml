@@ -1,0 +1,62 @@
+# Reference: the three first-class model backends (HF / Poe / LiteLLM) and the
+# two judge patterns. Nothing here is "active" by default — copy the blocks you
+# need into a real run config. (Running this as-is evaluates only the mock model.)
+run:
+  output_dir: ./results/backends
+  concurrency: 16
+  cache: true
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 1024}
+  judge_model: deepseek-r1
+
+models:
+  # (1) HF — local checkpoint / repo / LoRA via vLLM batch inference (mode A).
+  - id: zhongjing-local
+    type: hf
+    model: /models/zhongjing-tcm        # local path or HF repo id
+    dtype: bfloat16
+    tensor_parallel: 2
+    max_model_len: 8192
+    lora: /adapters/sbdt                 # optional 同病异治 LoRA
+
+  # (2) Poe — OpenAI-compatible endpoint; bot name is the model. 500 rpm cap.
+  - id: claude-poe
+    type: poe
+    bot_name: Claude-Opus-4.7
+    api_key_env: POE_API_KEY             # get it at poe.com/api_key
+    rpm: 480
+
+  # (3) LiteLLM — 100+ providers + any OpenAI-compatible endpoint.
+  - id: gpt
+    type: litellm
+    model: openai/gpt-4o
+    api_key_env: OPENAI_API_KEY
+
+  # Judge (recommended): DeepSeek-R1 via LiteLLM. judge_only -> not ranked itself.
+  - id: deepseek-r1
+    type: litellm
+    model: deepseek/deepseek-reasoner
+    api_key_env: DEEPSEEK_API_KEY
+    judge_only: true
+
+  # ---- Deployment mode B (production): everything behind LiteLLM ----------
+  # Serve the HF model as an OpenAI-compatible server (`vllm serve ...`) and reach
+  # it — and Poe — through LiteLLM, for one unified retry/cache/cost/limit layer:
+  # - {id: zhongjing-served, type: litellm, model: openai/zhongjing-tcm,
+  #    api_base: http://localhost:8000/v1, api_key: EMPTY}
+  # - {id: claude-via-litellm, type: litellm, model: openai/Claude-Opus-4.7,
+  #    api_base: https://api.poe.com/v1, api_key_env: POE_API_KEY}
+
+  # Always-available offline stand-in (keeps this file runnable):
+  - {id: mock-model, type: mock, behavior: auto}
+
+datasets:
+  - id: medqa_usmle
+    adapter: hf_mcq
+    path: GBaker/MedQA-USMLE-4-options
+    split: test
+    field_map: {question: question, options: options, answer: answer_idx}
+    answer_format: letter
+    metrics: [mcq_accuracy]
+    limit: 20

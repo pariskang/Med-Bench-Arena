@@ -1,0 +1,45 @@
+# Interactive agent benchmark: AgentClinic (Schmidgall et al., MIT).
+# The model acts as a doctor agent in a sequential clinic episode (ask patient /
+# REQUEST TEST / DIAGNOSIS READY) and is scored with pass^k.
+#
+#   python -m medeval run configs/example_agentclinic.yaml --limit 5
+#
+# Patient / measurement / moderator run *scripted* (rule-based, from the scenario)
+# by default, so the whole thing runs offline — only the doctor needs a model.
+# To use the real LLM-backed patient/moderator, add a `support:` block mapping
+# roles to model ids (see commented lines).
+run:
+  output_dir: ./results/agentclinic
+  concurrency: 8
+  cache: true
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 512}
+
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+  # Real doctor model:
+  # - {id: claude, type: poe, bot_name: Claude-Opus-4.7, api_key_env: POE_API_KEY}
+  # Optional LLM agents for patient/moderator:
+  # - {id: patient-llm, type: litellm, model: gpt-4o-mini, api_key_env: OPENAI_API_KEY}
+
+datasets:
+  - id: agentclinic_medqa     # 215 OSCE cases ship in the AgentClinic repo
+    adapter: agentclinic
+    variant: medqa
+    source_url: https://raw.githubusercontent.com/SamuelSchmidgall/AgentClinic/main/agentclinic_medqa.jsonl
+    max_turns: 20             # AgentClinic's default inference budget
+    k: 3                      # rollouts per case for pass^k
+    metrics: [pass_k]
+    # support: {patient: patient-llm, moderator: patient-llm}   # else scripted/offline
+
+  # AgentClinic-NEJM (image cases) — same adapter, variant: nejm:
+  # - id: agentclinic_nejm
+  #   adapter: agentclinic
+  #   variant: nejm
+  #   source_url: https://raw.githubusercontent.com/SamuelSchmidgall/AgentClinic/main/agentclinic_nejm.jsonl
+  #   metrics: [pass_k]
+  #
+  # AgentClinic-MIMIC-IV needs PhysioNet credentialing (not redistributable).
+  # MedAgentBench (adapter: medagentbench) needs a running HAPI-FHIR Docker server
+  # + the gated refsol.py grader — see the README.

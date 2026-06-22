@@ -1,0 +1,263 @@
+"""Orchestrator: schedule, cache, resume, score, rank.
+
+Wires the three decoupled layers together for the full ``N datasets × M models ×
+K metrics`` grid. Generations are cached on disk keyed by
+``hash(model + gen-params + sample)`` so reruns are cheap and resumable.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from .schema import Generation, Prediction, Sample
+from .providers.base import create_provider, ModelProvider
+from .datasets.base import create_dataset
+from .datasets.agent_env import AgentAdapter
+from .metrics.base import create_metric
+
+# Import implementation modules so their @register_* decorators run.
+from .providers import mock, litellm_provider, poe, hf  # noqa: F401
+from .datasets import hf_mcq, local_json, agent_env, tcmbench  # noqa: F401
+from .metrics import mcq, llm_judge  # noqa: F401
+
+
+def _safe(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", str(s))
+
+
+def _gen_to_dict(g: Generation) -> dict[str, Any]:
+    return {"text": g.text, "model": g.model, "prompt_tokens": g.prompt_tokens,
+            "completion_tokens": g.completion_tokens, "total_tokens": g.total_tokens,
+            "cost_usd": g.cost_usd, "latency_s": g.latency_s,
+            "finish_reason": g.finish_reason}
+
+
+def _gen_from_dict(d: dict[str, Any]) -> Generation:
+    return Generation(text=d.get("text", ""), model=d.get("model", ""),
+                      prompt_tokens=d.get("prompt_tokens", 0),
+                      completion_tokens=d.get("completion_tokens", 0),
+                      total_tokens=d.get("total_tokens", 0),
+                      cost_usd=d.get("cost_usd", 0.0), latency_s=d.get("latency_s", 0.0),
+                      finish_reason=d.get("finish_reason", ""))
+
+
+class Runner:
+    def __init__(self, config: dict[str, Any]):
+        self.cfg = config
+        run = config.get("run", {})
+        self.output_dir = Path(run.get("output_dir", "./results"))
+        self.concurrency = int(run.get("concurrency", 16))
+        self.cache = bool(run.get("cache", True))
+        self.eval_cfg = config.get("eval", {})
+        self.gen_defaults: dict[str, Any] = dict(
+            self.eval_cfg.get("gen", {"temperature": 0.0, "max_tokens": 1024}))
+        self.default_judge = self.eval_cfg.get("judge_model")
+
+        self.providers: dict[str, ModelProvider] = {}
+        for m in config.get("models", []):
+            prov = create_provider(m)
+            prov.concurrency = self.concurrency
+            self.providers[prov.id] = prov
+
+        self.datasets = [create_dataset(d) for d in config.get("datasets", [])]
+        self.cache_dir = self.output_dir / "cache"
+
+    # --- judge / agent-support resolution --------------------------------
+    def _judge_for(self, ds) -> ModelProvider | None:
+        jid = ds.judge or self.default_judge
+        if jid is None:
+            return None
+        if jid not in self.providers:
+            raise ValueError(
+                f"dataset {ds.id!r} needs judge {jid!r}, which is not in models[]")
+        return self.providers[jid]
+
+    def _agent_support(self, ds) -> dict[str, ModelProvider] | None:
+        spec = getattr(ds, "support_spec", {}) or {}
+        support = {role: self.providers[mid] for role, mid in spec.items()
+                   if mid in self.providers}
+        return support or None
+
+    # --- caching ----------------------------------------------------------
+    def _cache_path(self, prov: ModelProvider, ds) -> Path:
+        sig = json.dumps({"gen": self.gen_defaults, "model": getattr(prov, "model", prov.id)},
+                         sort_keys=True)
+        h = abs(hash(sig)) % (10 ** 10)
+        return self.cache_dir / f"{_safe(ds.id)}__{_safe(prov.id)}__{h}.jsonl"
+
+    def _load_cache(self, path: Path) -> dict[str, Prediction]:
+        out: dict[str, Prediction] = {}
+        if not (self.cache and path.exists()):
+            return out
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            d = json.loads(line)
+            out[d["sample_id"]] = Prediction(
+                sample_id=d["sample_id"], generation=_gen_from_dict(d["generation"]),
+                parsed=d.get("parsed"), rollouts=d.get("rollouts"),
+                trajectory=d.get("trajectory"))
+        return out
+
+    def _append_cache(self, path: Path, pred: Prediction) -> None:
+        if not self.cache:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rec = {"sample_id": pred.sample_id, "generation": _gen_to_dict(pred.generation),
+               "parsed": pred.parsed if not isinstance(pred.parsed, set) else list(pred.parsed),
+               "rollouts": pred.rollouts, "trajectory": pred.trajectory}
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+    # --- prediction -------------------------------------------------------
+    async def _predict(self, prov: ModelProvider, ds, samples: list[Sample]
+                       ) -> dict[str, Prediction]:
+        is_agent = isinstance(ds, AgentAdapter)
+        cpath = self._cache_path(prov, ds)
+        preds = self._load_cache(cpath)
+        todo = [s for s in samples if s.id not in preds]
+        if not todo:
+            return preds
+
+        if is_agent:
+            support = self._agent_support(ds)
+            sem = asyncio.Semaphore(self.concurrency)
+
+            async def roll(s: Sample):
+                async with sem:
+                    return await ds.rollout(s, prov, gen=self.gen_defaults, support=support)
+
+            results = await asyncio.gather(*(roll(s) for s in todo))
+            for pred in results:
+                preds[pred.sample_id] = pred
+                self._append_cache(cpath, pred)
+        else:
+            gens = await prov.agenerate_many([s.messages for s in todo], **self.gen_defaults)
+            for s, g in zip(todo, gens):
+                pred = ds.parse(s, g.text)
+                pred.generation = g  # attach real token/cost accounting
+                preds[s.id] = pred
+                self._append_cache(cpath, pred)
+        return preds
+
+    # --- scoring ----------------------------------------------------------
+    async def _score_all(self, metric, samples, preds) -> list:
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def one(s: Sample):
+            async with sem:
+                return await metric.score(s, preds[s.id])
+
+        return await asyncio.gather(*(one(s) for s in samples))
+
+    async def _eval(self, prov: ModelProvider, ds, samples) -> dict[str, Any]:
+        preds = await self._predict(prov, ds, samples)
+        metrics = []
+        for name in ds.metrics:
+            m = create_metric(name)
+            if m.needs_judge:
+                judge = self._judge_for(ds)
+                if judge is None:
+                    raise ValueError(
+                        f"{ds.id}: metric {name} needs a judge; set eval.judge_model "
+                        "or dataset.judge")
+                m.judge = judge
+            metrics.append(m)
+
+        agg: dict[str, Any] = {}
+        scores_by_metric: dict[str, list] = {}
+        for m in metrics:
+            scores = await self._score_all(m, samples, preds)
+            scores_by_metric[m.metric_name] = scores
+            agg[m.metric_name] = m.aggregate(scores)
+
+        model_cost = sum(preds[s.id].generation.cost_usd for s in samples)
+        self._write_detail(prov, ds, samples, preds, scores_by_metric)
+        return {"model": prov.id, "dataset": ds.id, "n": len(samples),
+                "metrics": agg, "model_cost_usd": round(model_cost, 6)}
+
+    # --- output -----------------------------------------------------------
+    def _write_detail(self, prov, ds, samples, preds, scores_by_metric) -> None:
+        path = self.output_dir / f"detail__{_safe(prov.id)}__{_safe(ds.id)}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            for i, s in enumerate(samples):
+                p = preds[s.id]
+                row = {
+                    "sample_id": s.id, "task": s.task_type.value,
+                    "prediction": p.generation.text[:2000],
+                    "parsed": p.parsed if not isinstance(p.parsed, set) else list(p.parsed),
+                    "reference": s.reference,
+                    "scores": {name: {"value": sc[i].value, "detail": sc[i].detail}
+                               for name, sc in scores_by_metric.items()},
+                }
+                if p.rollouts is not None:
+                    row["rollouts"] = p.rollouts
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    @staticmethod
+    def _headline(agg: dict[str, Any]) -> tuple[str, float]:
+        for metric, d in agg.items():
+            for key in ("accuracy", "judge_score", "pass^k"):
+                if key in d:
+                    return key, d[key]
+        # fall back to first numeric
+        for metric, d in agg.items():
+            for k, v in d.items():
+                if isinstance(v, (int, float)) and k != "n":
+                    return f"{metric}.{k}", v
+        return "score", 0.0
+
+    def _write_leaderboard(self, rows: list[dict[str, Any]]) -> None:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        (self.output_dir / "leaderboard.json").write_text(
+            json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        by_ds: dict[str, list] = {}
+        for r in rows:
+            by_ds.setdefault(r["dataset"], []).append(r)
+        lines = ["# MedEval Leaderboard", ""]
+        for dsid, rs in by_ds.items():
+            lines += [f"## {dsid}", "",
+                      "| Model | Score | Metric | n | Cost (USD) |",
+                      "|---|---|---|---|---|"]
+            ranked = sorted(rs, key=lambda r: self._headline(r["metrics"])[1], reverse=True)
+            for r in ranked:
+                key, val = self._headline(r["metrics"])
+                lines.append(
+                    f"| {r['model']} | {val:.4f} | {key} | {r['n']} | {r['model_cost_usd']:.4f} |")
+            lines.append("")
+        (self.output_dir / "leaderboard.md").write_text("\n".join(lines), encoding="utf-8")
+
+    # --- entry points -----------------------------------------------------
+    async def arun(self) -> list[dict[str, Any]]:
+        leaderboard: list[dict[str, Any]] = []
+        for ds in self.datasets:
+            samples = ds.load()
+            if not samples:
+                print(f"[medeval] WARNING: dataset {ds.id!r} produced 0 samples")
+            for prov in self.providers.values():
+                if prov.judge_only:
+                    continue
+                print(f"[medeval] {prov.id} × {ds.id}  ({len(samples)} samples)")
+                row = await self._eval(prov, ds, samples)
+                leaderboard.append(row)
+                key, val = self._headline(row["metrics"])
+                print(f"           -> {key}={val:.4f}")
+        self._write_leaderboard(leaderboard)
+        for prov in self.providers.values():
+            await prov.aclose()
+        print(f"[medeval] wrote {self.output_dir/'leaderboard.md'}")
+        return leaderboard
+
+    def run(self) -> list[dict[str, Any]]:
+        return asyncio.run(self.arun())
+
+
+def run_config(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build a :class:`Runner` from a config dict and execute it."""
+    return Runner(config).run()

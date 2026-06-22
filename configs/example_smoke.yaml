@@ -1,0 +1,46 @@
+# Fully-offline end-to-end smoke test: no API keys, no GPU, no network.
+# Exercises every code path — MCQ-free open_qa + safety (llm_judge), syndrome
+# differentiation (sdt), and an agent rollout (pass^k) — using the deterministic
+# mock provider as both the model-under-test and the judge.
+#
+#   python -m medeval run configs/example_smoke.yaml
+run:
+  output_dir: ./results/smoke
+  concurrency: 8
+  cache: false
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 256}
+  judge_model: mock-judge
+
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+
+datasets:
+  - id: demo_open_qa
+    adapter: local_json
+    task: open_qa
+    path: data/samples/demo_open_qa.jsonl
+    field_map: {prompt: question, rubric: rubric, reference: reference}
+    metrics: [llm_judge]
+
+  - id: demo_safety
+    adapter: local_json
+    task: safety
+    path: data/samples/demo_safety.jsonl
+    field_map: {prompt: prompt, reference: safe_response, label: label}
+    metrics: [llm_judge]
+
+  - id: demo_sdt
+    adapter: local_json
+    task: sdt
+    path: data/samples/demo_sdt.json
+    field_map: {prompt: "Clinical Data", reference: "Syndrome Differentiation", label: "TCM Syndrome"}
+    metrics: [llm_judge]
+
+  - id: demo_agent
+    adapter: agent_demo
+    k: 2
+    max_turns: 4
+    metrics: [pass_k]

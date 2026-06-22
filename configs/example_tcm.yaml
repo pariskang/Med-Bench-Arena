@@ -1,0 +1,75 @@
+# Traditional Chinese Medicine (TCM) evaluation — the protocol's reference run.
+# Knowledge (CMB / TCMBench MCQ) + syndrome differentiation 辨证 (TCMEval-SDT) +
+# prescription 方剂 (MTCMB) + safety 安全 (MTCMB-SE / CSEDB), all judged by an
+# LLM-as-judge. Mirrors the MTCMB 5-category structure.
+#
+#   python -m medeval run configs/example_tcm.yaml --limit 3
+#
+# Defaults to the offline mock model + mock judge so it runs with no keys (still
+# downloads the real datasets). For a real run, point `judge_model` at DeepSeek-R1
+# and the model-under-test at your ZhongJing-TCM checkpoint (see commented lines).
+run:
+  output_dir: ./results/tcm
+  concurrency: 12
+  cache: true
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 1024}
+  judge_model: mock-judge        # real: deepseek-r1 (below)
+
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+  # Real model-under-test (local ZhongJing-TCM via vLLM):
+  # - {id: zhongjing-tcm, type: hf, model: /models/zhongjing-tcm, dtype: bfloat16,
+  #    tensor_parallel: 2, max_model_len: 8192, lora: /adapters/sbdt}
+  # Recommended judge (CSEDB-validated price/throughput):
+  # - {id: deepseek-r1, type: litellm, model: deepseek/deepseek-reasoner,
+  #    api_key_env: DEEPSEEK_API_KEY, judge_only: true}
+
+datasets:
+  # --- knowledge (MCQ) ---
+  - id: cmb_tcm
+    adapter: hf_mcq
+    path: FreedomIntelligence/CMB
+    data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-val/CMB-val-merge.json
+    field_map: {question: question, options: option, answer: answer}
+    answer_format: multi
+    metrics: [mcq_accuracy]
+
+  - id: tcmbench
+    adapter: tcmbench
+    source_url: https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SDT.json
+    metrics: [mcq_accuracy]
+
+  # --- syndrome differentiation 辨证 (judged on the 症状–病机–证型 chain) ---
+  - id: tcmeval_sdt
+    adapter: local_json
+    task: sdt                    # -> default 证型链 rubric (with 同病异治 partial credit)
+    source_url: https://raw.githubusercontent.com/zhuyan166/TCMEval/main/evaluation/TCMEval-SDT/data/Train_TCM_Data_v1.json
+    field_map: {prompt: "Clinical Data", reference: "Syndrome Differentiation", label: "TCM Syndrome"}
+    metrics: [llm_judge]
+
+  # --- prescription 方剂生成 ---
+  - id: mtcmb_frd
+    adapter: local_json
+    task: prescription           # -> default 方剂 rubric (君臣佐使 + 配伍禁忌)
+    source_url: https://raw.githubusercontent.com/Wayyuanyuan/MTCMB/main/data/10.TCM_FRD.jsonl
+    field_map: {prompt: question, reference: answer}
+    metrics: [llm_judge]
+
+  # --- safety 安全 ---
+  - id: mtcmb_safety
+    adapter: local_json
+    task: safety
+    source_url: https://raw.githubusercontent.com/Wayyuanyuan/MTCMB/main/data/11.TCM_SE_A.jsonl
+    field_map: {prompt: question, reference: answer}
+    metrics: [llm_judge]
+
+  - id: csedb_sample           # only a 2-record public sample; full bank is gated
+    adapter: local_json        # (email it@medlinker.com). Split safety vs 有效 on 门类.
+    task: safety
+    source_url: https://raw.githubusercontent.com/Medlinker-MG/CSEDB/main/generate/test_sampled.json
+    explode: "设计的考题内容.最具代表性的测试case"
+    field_map: {prompt: "输入 case", rubric: "规则判断列表", label: "考点.门类"}
+    metrics: [llm_judge]
