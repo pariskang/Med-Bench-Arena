@@ -37,7 +37,10 @@ class MockProvider(ModelProvider):
         self.behavior: str = config.get("behavior", "auto")
 
     async def agenerate(self, messages: list[Message], **gen: Any) -> Generation:
-        prompt = "\n".join(m.content for m in messages)
+        # image-aware: fold image presence into the deterministic prompt
+        prompt = "\n".join(
+            m.content + (f" [IMAGE x{len(m.images)}]" if m.images else "")
+            for m in messages)
         text = self._respond(prompt)
         ptok = max(1, len(prompt) // 4)
         ctok = max(1, len(text) // 4)

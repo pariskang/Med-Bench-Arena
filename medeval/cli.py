@@ -60,6 +60,19 @@ def cmd_pool(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_kg(args: argparse.Namespace) -> int:
+    from .kg.tcm_classics import build_classics_kg, export_kg
+    kg = build_classics_kg()
+    if args.stats:
+        import json
+        print(json.dumps(kg.stats(), ensure_ascii=False, indent=2))
+    fmts = None if args.format == "all" else [args.format]
+    paths = export_kg(kg, args.output, formats=fmts)
+    print(f"[medeval] wrote KG ({kg.stats()['nodes']} nodes, {kg.stats()['edges']} edges): "
+          + ", ".join(str(p) for p in paths))
+    return 0
+
+
 def cmd_slurm(args: argparse.Namespace) -> int:
     from .distributed import submit_slurm
     submit_slurm(args.config, args.num_shards, output_dir=args.output,
@@ -130,6 +143,12 @@ def main(argv: list[str] | None = None) -> int:
     p_pool.add_argument("--limit", type=int, default=None, help="cap samples per dataset")
     p_pool.add_argument("--no-cache", action="store_true")
     p_pool.set_defaults(func=cmd_pool)
+
+    p_kg = sub.add_parser("kg", help="build + export the TCM classics knowledge graph")
+    p_kg.add_argument("--output", "--out", dest="output", default="data/kg")
+    p_kg.add_argument("--format", choices=["json", "turtle", "graphml", "all"], default="all")
+    p_kg.add_argument("--stats", action="store_true", help="print node/edge counts")
+    p_kg.set_defaults(func=cmd_kg)
 
     p_slurm = sub.add_parser("slurm", help="generate + submit a Slurm job array (one task per shard) + merge")
     p_slurm.add_argument("config", help="path to the YAML run spec")

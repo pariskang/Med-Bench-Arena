@@ -15,6 +15,7 @@ from .datasets.base import available_adapters, create_dataset, register_dataset
 from .metrics.base import available_metrics, create_metric, register_metric
 from .submit import export, to_opencompass, to_medbench
 from .distributed import merge_results, run_pool, run_ray, submit_slurm
+from .kg import build_classics_kg, export_kg, get_kg, load_kg
 
 __version__ = "0.1.0"
 
@@ -26,5 +27,6 @@ __all__ = [
     "available_metrics", "create_metric", "register_metric",
     "export", "to_opencompass", "to_medbench",
     "merge_results", "run_pool", "run_ray", "submit_slurm",
+    "build_classics_kg", "export_kg", "get_kg", "load_kg",
     "__version__",
 ]

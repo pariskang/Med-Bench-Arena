@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+<key id="type" for="node" attr.name="type" attr.type="string"/>
+<key id="label" for="node" attr.name="label" attr.type="string"/>
+<key id="relation" for="edge" attr.name="relation" attr.type="string"/>
+<graph edgedefault="directed">
+<node id="张仲景"><data key="type">author</data><data key="label">张仲景</data></node>
+<node id="东汉"><data key="type">dynasty</data><data key="label">东汉</data></node>
+<node id="王叔和"><data key="type">author</data><data key="label">王叔和</data></node>
+<node id="西晋"><data key="type">dynasty</data><data key="label">西晋</data></node>
+<node id="皇甫谧"><data key="type">author</data><data key="label">皇甫谧</data></node>
+<node id="巢元方"><data key="type">author</data><data key="label">巢元方</data></node>
+<node id="隋"><data key="type">dynasty</data><data key="label">隋</data></node>
+<node id="孙思邈"><data key="type">author</data><data key="label">孙思邈</data></node>
+<node id="唐"><data key="type">dynasty</data><data key="label">唐</data></node>
+<node id="王焘"><data key="type">author</data><data key="label">王焘</data></node>
+<node id="钱乙"><data key="type">author</data><data key="label">钱乙</data></node>
+<node id="宋"><data key="type">dynasty</data><data key="label">宋</data></node>
+<node id="陈言"><data key="type">author</data><data key="label">陈言</data></node>
+<node id="李杲"><data key="type">author</data><data key="label">李杲</data></node>
+<node id="金"><data key="type">dynasty</data><data key="label">金</data></node>
+<node id="刘完素"><data key="type">author</data><data key="label">刘完素</data></node>
+<node id="张从正"><data key="type">author</data><data key="label">张从正</data></node>
+<node id="朱震亨"><data key="type">author</data><data key="label">朱震亨</data></node>
+<node id="元"><data key="type">dynasty</data><data key="label">元</data></node>
+<node id="李时珍"><data key="type">author</data><data key="label">李时珍</data></node>
+<node id="明"><data key="type">dynasty</data><data key="label">明</data></node>
+<node id="张介宾"><data key="type">author</data><data key="label">张介宾</data></node>
+<node id="吴有性"><data key="type">author</data><data key="label">吴有性</data></node>
+<node id="吴谦"><data key="type">author</data><data key="label">吴谦</data></node>
+<node id="清"><data key="type">dynasty</data><data key="label">清</data></node>
+<node id="叶桂"><data key="type">author</data><data key="label">叶桂</data></node>
+<node id="吴瑭"><data key="type">author</data><data key="label">吴瑭</data></node>
+<node id="薛雪"><data key="type">author</data><data key="label">薛雪</data></node>
+<node id="王清任"><data key="type">author</data><data key="label">王清任</data></node>
+<node id="唐宗海"><data key="type">author</data><data key="label">唐宗海</data></node>
+<node id="王肯堂"><data key="type">author</data><data key="label">王肯堂</data></node>
+<node id="程国彭"><data key="type">author</data><data key="label">程国彭</data></node>
+<node id="黄帝内经"><data key="type">classic</data><data key="label">黄帝内经</data></node>
+<node id="战国秦汉"><data key="type">dynasty</data><data key="label">战国秦汉</data></node>
+<node id="医经"><data key="type">category</data><data key="label">医经</data></node>
+<node id="托名黄帝"><data key="type">author</data><data key="label">托名黄帝</data></node>
+<node id="素问"><data key="type">classic</data><data key="label">素问</data></node>
+<node id="灵枢"><data key="type">classic</data><data key="label">灵枢</data></node>
+<node id="难经"><data key="type">classic</data><data key="label">难经</data></node>
+<node id="秦汉"><data key="type">dynasty</data><data key="label">秦汉</data></node>
+<node id="托名扁鹊"><data key="type">author</data><data key="label">托名扁鹊</data></node>
+<node id="神农本草经"><data key="type">classic</data><data key="label">神农本草经</data></node>
+<node id="本草"><data key="type">category</data><data key="label">本草</data></node>
+<node id="托名神农"><data key="type">author</data><data key="label">托名神农</data></node>
+<node id="伤寒杂病论"><data key="type">classic</data><data key="label">伤寒杂病论</data></node>
+<node id="经方"><data key="type">category</data><data key="label">经方</data></node>
+<node id="伤寒论"><data key="type">classic</data><data key="label">伤寒论</data></node>
+<node id="金匮要略"><data key="type">classic</data><data key="label">金匮要略</data></node>
+<node id="脉经"><data key="type">classic</data><data key="label">脉经</data></node>
+<node id="诊法"><data key="type">category</data><data key="label">诊法</data></node>
+<node id="针灸甲乙经"><data key="type">classic</data><data key="label">针灸甲乙经</data></node>
+<node id="针灸"><data key="type">category</data><data key="label">针灸</data></node>
+<node id="诸病源候论"><data key="type">classic</data><data key="label">诸病源候论</data></node>
+<node id="病机"><data key="type">category</data><data key="label">病机</data></node>
+<node id="备急千金要方"><data key="type">classic</data><data key="label">备急千金要方</data></node>
+<node id="方书"><data key="type">category</data><data key="label">方书</data></node>
+<node id="千金翼方"><data key="type">classic</data><data key="label">千金翼方</data></node>
+<node id="外台秘要"><data key="type">classic</data><data key="label">外台秘要</data></node>
+<node id="太平惠民和剂局方"><data key="type">classic</data><data key="label">太平惠民和剂局方</data></node>
+<node id="陈师文"><data key="type">author</data><data key="label">陈师文</data></node>
+<node id="小儿药证直诀"><data key="type">classic</data><data key="label">小儿药证直诀</data></node>
+<node id="儿科"><data key="type">category</data><data key="label">儿科</data></node>
+<node id="三因极一病证方论"><data key="type">classic</data><data key="label">三因极一病证方论</data></node>
+<node id="病因"><data key="type">category</data><data key="label">病因</data></node>
+<node id="脾胃论"><data key="type">classic</data><data key="label">脾胃论</data></node>
+<node id="内伤"><data key="type">category</data><data key="label">内伤</data></node>
+<node id="内外伤辨惑论"><data key="type">classic</data><data key="label">内外伤辨惑论</data></node>
+<node id="素问玄机原病式"><data key="type">classic</data><data key="label">素问玄机原病式</data></node>
+<node id="运气"><data key="type">category</data><data key="label">运气</data></node>
+<node id="儒门事亲"><data key="type">classic</data><data key="label">儒门事亲</data></node>
+<node id="攻邪"><data key="type">category</data><data key="label">攻邪</data></node>
+<node id="丹溪心法"><data key="type">classic</data><data key="label">丹溪心法</data></node>
+<node id="杂病"><data key="type">category</data><data key="label">杂病</data></node>
+<node id="格致余论"><data key="type">classic</data><data key="label">格致余论</data></node>
+<node id="医论"><data key="type">category</data><data key="label">医论</data></node>
+<node id="本草纲目"><data key="type">classic</data><data key="label">本草纲目</data></node>
+<node id="濒湖脉学"><data key="type">classic</data><data key="label">濒湖脉学</data></node>
+<node id="景岳全书"><data key="type">classic</data><data key="label">景岳全书</data></node>
+<node id="综合"><data key="type">category</data><data key="label">综合</data></node>
+<node id="温疫论"><data key="type">classic</data><data key="label">温疫论</data></node>
+<node id="温病"><data key="type">category</data><data key="label">温病</data></node>
+<node id="医宗金鉴"><data key="type">classic</data><data key="label">医宗金鉴</data></node>
+<node id="温热论"><data key="type">classic</data><data key="label">温热论</data></node>
+<node id="温病条辨"><data key="type">classic</data><data key="label">温病条辨</data></node>
+<node id="湿热条辨"><data key="type">classic</data><data key="label">湿热条辨</data></node>
+<node id="医林改错"><data key="type">classic</data><data key="label">医林改错</data></node>
+<node id="瘀血"><data key="type">category</data><data key="label">瘀血</data></node>
+<node id="血证论"><data key="type">classic</data><data key="label">血证论</data></node>
+<node id="血证"><data key="type">category</data><data key="label">血证</data></node>
+<node id="证治准绳"><data key="type">classic</data><data key="label">证治准绳</data></node>
+<node id="医学心悟"><data key="type">classic</data><data key="label">医学心悟</data></node>
+<node id="桂枝汤"><data key="type">formula</data><data key="label">桂枝汤</data></node>
+<node id="麻黄汤"><data key="type">formula</data><data key="label">麻黄汤</data></node>
+<node id="小柴胡汤"><data key="type">formula</data><data key="label">小柴胡汤</data></node>
+<node id="白虎汤"><data key="type">formula</data><data key="label">白虎汤</data></node>
+<node id="四逆汤"><data key="type">formula</data><data key="label">四逆汤</data></node>
+<node id="理中丸"><data key="type">formula</data><data key="label">理中丸</data></node>
+<node id="大承气汤"><data key="type">formula</data><data key="label">大承气汤</data></node>
+<node id="五苓散"><data key="type">formula</data><data key="label">五苓散</data></node>
+<node id="炙甘草汤"><data key="type">formula</data><data key="label">炙甘草汤</data></node>
+<node id="肾气丸"><data key="type">formula</data><data key="label">肾气丸</data></node>
+<node id="大黄牡丹汤"><data key="type">formula</data><data key="label">大黄牡丹汤</data></node>
+<node id="麦门冬汤"><data key="type">formula</data><data key="label">麦门冬汤</data></node>
+<node id="当归芍药散"><data key="type">formula</data><data key="label">当归芍药散</data></node>
+<node id="六味地黄丸"><data key="type">formula</data><data key="label">六味地黄丸</data></node>
+<node id="补中益气汤"><data key="type">formula</data><data key="label">补中益气汤</data></node>
+<node id="清暑益气汤"><data key="type">formula</data><data key="label">清暑益气汤</data></node>
+<node id="银翘散"><data key="type">formula</data><data key="label">银翘散</data></node>
+<node id="桑菊饮"><data key="type">formula</data><data key="label">桑菊饮</data></node>
+<node id="清营汤"><data key="type">formula</data><data key="label">清营汤</data></node>
+<node id="安宫牛黄丸"><data key="type">formula</data><data key="label">安宫牛黄丸</data></node>
+<node id="血府逐瘀汤"><data key="type">formula</data><data key="label">血府逐瘀汤</data></node>
+<node id="补阳还五汤"><data key="type">formula</data><data key="label">补阳还五汤</data></node>
+<node id="越鞠丸"><data key="type">formula</data><data key="label">越鞠丸</data></node>
+<node id="逍遥散"><data key="type">formula</data><data key="label">逍遥散</data></node>
+<node id="四君子汤"><data key="type">formula</data><data key="label">四君子汤</data></node>
+<edge id="e0" source="张仲景" target="东汉"><data key="relation">dynasty</data></edge>
+<edge id="e1" source="王叔和" target="西晋"><data key="relation">dynasty</data></edge>
+<edge id="e2" source="皇甫谧" target="西晋"><data key="relation">dynasty</data></edge>
+<edge id="e3" source="巢元方" target="隋"><data key="relation">dynasty</data></edge>
+<edge id="e4" source="孙思邈" target="唐"><data key="relation">dynasty</data></edge>
+<edge id="e5" source="王焘" target="唐"><data key="relation">dynasty</data></edge>
+<edge id="e6" source="钱乙" target="宋"><data key="relation">dynasty</data></edge>
+<edge id="e7" source="陈言" target="宋"><data key="relation">dynasty</data></edge>
+<edge id="e8" source="李杲" target="金"><data key="relation">dynasty</data></edge>
+<edge id="e9" source="刘完素" target="金"><data key="relation">dynasty</data></edge>
+<edge id="e10" source="张从正" target="金"><data key="relation">dynasty</data></edge>
+<edge id="e11" source="朱震亨" target="元"><data key="relation">dynasty</data></edge>
+<edge id="e12" source="李时珍" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e13" source="张介宾" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e14" source="吴有性" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e15" source="吴谦" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e16" source="叶桂" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e17" source="吴瑭" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e18" source="薛雪" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e19" source="王清任" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e20" source="唐宗海" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e21" source="王肯堂" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e22" source="程国彭" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e23" source="黄帝内经" target="战国秦汉"><data key="relation">dynasty</data></edge>
+<edge id="e24" source="黄帝内经" target="医经"><data key="relation">category</data></edge>
+<edge id="e25" source="黄帝内经" target="托名黄帝"><data key="relation">authored_by</data></edge>
+<edge id="e26" source="素问" target="战国秦汉"><data key="relation">dynasty</data></edge>
+<edge id="e27" source="素问" target="医经"><data key="relation">category</data></edge>
+<edge id="e28" source="素问" target="托名黄帝"><data key="relation">authored_by</data></edge>
+<edge id="e29" source="素问" target="黄帝内经"><data key="relation">part_of</data></edge>
+<edge id="e30" source="灵枢" target="战国秦汉"><data key="relation">dynasty</data></edge>
+<edge id="e31" source="灵枢" target="医经"><data key="relation">category</data></edge>
+<edge id="e32" source="灵枢" target="托名黄帝"><data key="relation">authored_by</data></edge>
+<edge id="e33" source="灵枢" target="黄帝内经"><data key="relation">part_of</data></edge>
+<edge id="e34" source="难经" target="秦汉"><data key="relation">dynasty</data></edge>
+<edge id="e35" source="难经" target="医经"><data key="relation">category</data></edge>
+<edge id="e36" source="难经" target="托名扁鹊"><data key="relation">authored_by</data></edge>
+<edge id="e37" source="神农本草经" target="秦汉"><data key="relation">dynasty</data></edge>
+<edge id="e38" source="神农本草经" target="本草"><data key="relation">category</data></edge>
+<edge id="e39" source="神农本草经" target="托名神农"><data key="relation">authored_by</data></edge>
+<edge id="e40" source="伤寒杂病论" target="东汉"><data key="relation">dynasty</data></edge>
+<edge id="e41" source="伤寒杂病论" target="经方"><data key="relation">category</data></edge>
+<edge id="e42" source="伤寒杂病论" target="张仲景"><data key="relation">authored_by</data></edge>
+<edge id="e43" source="伤寒论" target="东汉"><data key="relation">dynasty</data></edge>
+<edge id="e44" source="伤寒论" target="经方"><data key="relation">category</data></edge>
+<edge id="e45" source="伤寒论" target="张仲景"><data key="relation">authored_by</data></edge>
+<edge id="e46" source="伤寒论" target="伤寒杂病论"><data key="relation">part_of</data></edge>
+<edge id="e47" source="金匮要略" target="东汉"><data key="relation">dynasty</data></edge>
+<edge id="e48" source="金匮要略" target="经方"><data key="relation">category</data></edge>
+<edge id="e49" source="金匮要略" target="张仲景"><data key="relation">authored_by</data></edge>
+<edge id="e50" source="金匮要略" target="伤寒杂病论"><data key="relation">part_of</data></edge>
+<edge id="e51" source="脉经" target="西晋"><data key="relation">dynasty</data></edge>
+<edge id="e52" source="脉经" target="诊法"><data key="relation">category</data></edge>
+<edge id="e53" source="脉经" target="王叔和"><data key="relation">authored_by</data></edge>
+<edge id="e54" source="针灸甲乙经" target="西晋"><data key="relation">dynasty</data></edge>
+<edge id="e55" source="针灸甲乙经" target="针灸"><data key="relation">category</data></edge>
+<edge id="e56" source="针灸甲乙经" target="皇甫谧"><data key="relation">authored_by</data></edge>
+<edge id="e57" source="诸病源候论" target="隋"><data key="relation">dynasty</data></edge>
+<edge id="e58" source="诸病源候论" target="病机"><data key="relation">category</data></edge>
+<edge id="e59" source="诸病源候论" target="巢元方"><data key="relation">authored_by</data></edge>
+<edge id="e60" source="备急千金要方" target="唐"><data key="relation">dynasty</data></edge>
+<edge id="e61" source="备急千金要方" target="方书"><data key="relation">category</data></edge>
+<edge id="e62" source="备急千金要方" target="孙思邈"><data key="relation">authored_by</data></edge>
+<edge id="e63" source="千金翼方" target="唐"><data key="relation">dynasty</data></edge>
+<edge id="e64" source="千金翼方" target="方书"><data key="relation">category</data></edge>
+<edge id="e65" source="千金翼方" target="孙思邈"><data key="relation">authored_by</data></edge>
+<edge id="e66" source="外台秘要" target="唐"><data key="relation">dynasty</data></edge>
+<edge id="e67" source="外台秘要" target="方书"><data key="relation">category</data></edge>
+<edge id="e68" source="外台秘要" target="王焘"><data key="relation">authored_by</data></edge>
+<edge id="e69" source="太平惠民和剂局方" target="宋"><data key="relation">dynasty</data></edge>
+<edge id="e70" source="太平惠民和剂局方" target="方书"><data key="relation">category</data></edge>
+<edge id="e71" source="太平惠民和剂局方" target="陈师文"><data key="relation">authored_by</data></edge>
+<edge id="e72" source="小儿药证直诀" target="宋"><data key="relation">dynasty</data></edge>
+<edge id="e73" source="小儿药证直诀" target="儿科"><data key="relation">category</data></edge>
+<edge id="e74" source="小儿药证直诀" target="钱乙"><data key="relation">authored_by</data></edge>
+<edge id="e75" source="三因极一病证方论" target="宋"><data key="relation">dynasty</data></edge>
+<edge id="e76" source="三因极一病证方论" target="病因"><data key="relation">category</data></edge>
+<edge id="e77" source="三因极一病证方论" target="陈言"><data key="relation">authored_by</data></edge>
+<edge id="e78" source="脾胃论" target="金"><data key="relation">dynasty</data></edge>
+<edge id="e79" source="脾胃论" target="内伤"><data key="relation">category</data></edge>
+<edge id="e80" source="脾胃论" target="李杲"><data key="relation">authored_by</data></edge>
+<edge id="e81" source="内外伤辨惑论" target="金"><data key="relation">dynasty</data></edge>
+<edge id="e82" source="内外伤辨惑论" target="内伤"><data key="relation">category</data></edge>
+<edge id="e83" source="内外伤辨惑论" target="李杲"><data key="relation">authored_by</data></edge>
+<edge id="e84" source="素问玄机原病式" target="金"><data key="relation">dynasty</data></edge>
+<edge id="e85" source="素问玄机原病式" target="运气"><data key="relation">category</data></edge>
+<edge id="e86" source="素问玄机原病式" target="刘完素"><data key="relation">authored_by</data></edge>
+<edge id="e87" source="儒门事亲" target="金"><data key="relation">dynasty</data></edge>
+<edge id="e88" source="儒门事亲" target="攻邪"><data key="relation">category</data></edge>
+<edge id="e89" source="儒门事亲" target="张从正"><data key="relation">authored_by</data></edge>
+<edge id="e90" source="丹溪心法" target="元"><data key="relation">dynasty</data></edge>
+<edge id="e91" source="丹溪心法" target="杂病"><data key="relation">category</data></edge>
+<edge id="e92" source="丹溪心法" target="朱震亨"><data key="relation">authored_by</data></edge>
+<edge id="e93" source="格致余论" target="元"><data key="relation">dynasty</data></edge>
+<edge id="e94" source="格致余论" target="医论"><data key="relation">category</data></edge>
+<edge id="e95" source="格致余论" target="朱震亨"><data key="relation">authored_by</data></edge>
+<edge id="e96" source="本草纲目" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e97" source="本草纲目" target="本草"><data key="relation">category</data></edge>
+<edge id="e98" source="本草纲目" target="李时珍"><data key="relation">authored_by</data></edge>
+<edge id="e99" source="濒湖脉学" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e100" source="濒湖脉学" target="诊法"><data key="relation">category</data></edge>
+<edge id="e101" source="濒湖脉学" target="李时珍"><data key="relation">authored_by</data></edge>
+<edge id="e102" source="景岳全书" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e103" source="景岳全书" target="综合"><data key="relation">category</data></edge>
+<edge id="e104" source="景岳全书" target="张介宾"><data key="relation">authored_by</data></edge>
+<edge id="e105" source="温疫论" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e106" source="温疫论" target="温病"><data key="relation">category</data></edge>
+<edge id="e107" source="温疫论" target="吴有性"><data key="relation">authored_by</data></edge>
+<edge id="e108" source="医宗金鉴" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e109" source="医宗金鉴" target="综合"><data key="relation">category</data></edge>
+<edge id="e110" source="医宗金鉴" target="吴谦"><data key="relation">authored_by</data></edge>
+<edge id="e111" source="温热论" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e112" source="温热论" target="温病"><data key="relation">category</data></edge>
+<edge id="e113" source="温热论" target="叶桂"><data key="relation">authored_by</data></edge>
+<edge id="e114" source="温病条辨" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e115" source="温病条辨" target="温病"><data key="relation">category</data></edge>
+<edge id="e116" source="温病条辨" target="吴瑭"><data key="relation">authored_by</data></edge>
+<edge id="e117" source="湿热条辨" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e118" source="湿热条辨" target="温病"><data key="relation">category</data></edge>
+<edge id="e119" source="湿热条辨" target="薛雪"><data key="relation">authored_by</data></edge>
+<edge id="e120" source="医林改错" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e121" source="医林改错" target="瘀血"><data key="relation">category</data></edge>
+<edge id="e122" source="医林改错" target="王清任"><data key="relation">authored_by</data></edge>
+<edge id="e123" source="血证论" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e124" source="血证论" target="血证"><data key="relation">category</data></edge>
+<edge id="e125" source="血证论" target="唐宗海"><data key="relation">authored_by</data></edge>
+<edge id="e126" source="证治准绳" target="明"><data key="relation">dynasty</data></edge>
+<edge id="e127" source="证治准绳" target="综合"><data key="relation">category</data></edge>
+<edge id="e128" source="证治准绳" target="王肯堂"><data key="relation">authored_by</data></edge>
+<edge id="e129" source="医学心悟" target="清"><data key="relation">dynasty</data></edge>
+<edge id="e130" source="医学心悟" target="综合"><data key="relation">category</data></edge>
+<edge id="e131" source="医学心悟" target="程国彭"><data key="relation">authored_by</data></edge>
+<edge id="e132" source="桂枝汤" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e133" source="麻黄汤" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e134" source="小柴胡汤" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e135" source="白虎汤" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e136" source="四逆汤" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e137" source="理中丸" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e138" source="大承气汤" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e139" source="五苓散" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e140" source="炙甘草汤" target="伤寒论"><data key="relation">from_source</data></edge>
+<edge id="e141" source="肾气丸" target="金匮要略"><data key="relation">from_source</data></edge>
+<edge id="e142" source="大黄牡丹汤" target="金匮要略"><data key="relation">from_source</data></edge>
+<edge id="e143" source="麦门冬汤" target="金匮要略"><data key="relation">from_source</data></edge>
+<edge id="e144" source="当归芍药散" target="金匮要略"><data key="relation">from_source</data></edge>
+<edge id="e145" source="六味地黄丸" target="小儿药证直诀"><data key="relation">from_source</data></edge>
+<edge id="e146" source="补中益气汤" target="脾胃论"><data key="relation">from_source</data></edge>
+<edge id="e147" source="清暑益气汤" target="脾胃论"><data key="relation">from_source</data></edge>
+<edge id="e148" source="银翘散" target="温病条辨"><data key="relation">from_source</data></edge>
+<edge id="e149" source="桑菊饮" target="温病条辨"><data key="relation">from_source</data></edge>
+<edge id="e150" source="清营汤" target="温病条辨"><data key="relation">from_source</data></edge>
+<edge id="e151" source="安宫牛黄丸" target="温病条辨"><data key="relation">from_source</data></edge>
+<edge id="e152" source="血府逐瘀汤" target="医林改错"><data key="relation">from_source</data></edge>
+<edge id="e153" source="补阳还五汤" target="医林改错"><data key="relation">from_source</data></edge>
+<edge id="e154" source="越鞠丸" target="丹溪心法"><data key="relation">from_source</data></edge>
+<edge id="e155" source="逍遥散" target="太平惠民和剂局方"><data key="relation">from_source</data></edge>
+<edge id="e156" source="四君子汤" target="太平惠民和剂局方"><data key="relation">from_source</data></edge>
+</graph>
+</graphml>

@@ -7,6 +7,8 @@ and *produce* ``Score``s. Because the three sides only depend on these types
 """
 from __future__ import annotations
 
+import base64
+import mimetypes
 import time
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -24,15 +26,35 @@ class TaskType(str, Enum):
     AGENT = "agent"                # interactive rollout (AgentClinic, MedAgentBench)
 
 
+def image_to_url(img: str) -> str:
+    """Normalize an image reference to a URL the vision APIs accept: pass http(s)
+    and data: URIs through; base64-encode a local file path into a data URI."""
+    if img.startswith(("http://", "https://", "data:")):
+        return img
+    mime = mimetypes.guess_type(img)[0] or "image/jpeg"
+    with open(img, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
 @dataclass
 class Message:
-    """One chat turn. ``content`` is a string (text-only for now)."""
+    """One chat turn. ``content`` is text; ``images`` (optional) are http(s)/data
+    URIs or local paths attached to this turn (for vision models)."""
 
     role: str           # "system" | "user" | "assistant"
     content: str
+    images: list[str] | None = None
 
-    def to_openai(self) -> dict[str, str]:
-        return {"role": self.role, "content": self.content}
+    def to_openai(self) -> dict[str, Any]:
+        if not self.images:
+            return {"role": self.role, "content": self.content}
+        blocks: list[dict[str, Any]] = []
+        if self.content:
+            blocks.append({"type": "text", "text": self.content})
+        for img in self.images:
+            blocks.append({"type": "image_url", "image_url": {"url": image_to_url(img)}})
+        return {"role": self.role, "content": blocks}
 
 
 @dataclass

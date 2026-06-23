@@ -16,6 +16,7 @@ from the reference text. Extend the lexicons via config
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,32 @@ _CLASSICS: dict[str, list[str]] = {
     "三因极一病证方论": ["三因极一病证方论", "三因方"], "小儿药证直诀": ["小儿药证直诀"],
     "本草纲目拾遗": ["本草纲目拾遗"], "证治准绳": ["证治准绳"], "医学心悟": ["医学心悟"],
 }
+
+
+# --- 舌象 / 脉象 lexicons (matched only inside the 舌/苔/脉 clause) ----------
+_TONGUE_BODY = ["淡白", "淡红", "绛", "青紫", "紫暗", "瘀斑", "瘀点", "红", "紫"]
+_TONGUE_SHAPE = ["胖大", "瘦薄", "齿痕", "裂纹", "芒刺", "点刺", "颤动", "歪斜", "老", "嫩"]
+_COATING = ["花剥", "剥脱", "薄", "厚", "腻", "滑", "燥", "润", "腐", "糙", "少", "无",
+            "白", "黄", "灰", "黑", "剥"]
+_PULSE = ["浮", "沉", "迟", "数", "滑", "涩", "虚", "实", "长", "短", "洪", "微", "紧",
+          "缓", "弦", "芤", "革", "牢", "濡", "弱", "散", "细", "伏", "动", "促", "结",
+          "代", "疾"]
+
+
+def _clauses(text: str, anchor: str) -> str:
+    """Concatenate only the clauses that mention ``anchor`` (舌/苔/脉), so a feature
+    char is counted only in the right diagnostic context."""
+    parts = re.split(r"[，。；、,.;\s]+", text or "")
+    return " ".join(p for p in parts if anchor in p)
+
+
+def _match_terms(blob: str, lexicon: list[str]) -> set[str]:
+    work, found = blob, set()
+    for term in sorted(lexicon, key=len, reverse=True):
+        if term and term in work:
+            found.add(term)
+            work = work.replace(term, "　")
+    return found
 
 
 def _alias_map(canon: dict[str, list[str]]) -> dict[str, str]:
@@ -184,6 +211,58 @@ class MeridianAcupoint(_LexiconMetric):
                 "n": len(scores)}
 
 
+@register_metric("tongue_pulse")
+class TonguePulse(Metric):
+    """舌象/脉象 feature accuracy — for multimodal 舌诊/脉诊 (e.g. TCM-Ladder): set-F1
+    over tongue features (舌色/舌形/苔) and pulse features (脉), each extracted only
+    from its own clause. Headline = mean of the present categories. Gold from
+    ``reference['tongue'|'pulse']`` lists or the reference text."""
+
+    def _gold_tongue(self, sample: Sample) -> set[str]:
+        ex = sample.reference.get("tongue")
+        if ex:
+            return set(ex) if isinstance(ex, list) else self._extract_tongue(str(ex))
+        return self._extract_tongue(_ref_text(sample))
+
+    def _gold_pulse(self, sample: Sample) -> set[str]:
+        ex = sample.reference.get("pulse")
+        if ex:
+            return set(ex) if isinstance(ex, list) else self._extract_pulse(str(ex))
+        return self._extract_pulse(_ref_text(sample))
+
+    @staticmethod
+    def _extract_tongue(text: str) -> set[str]:
+        tongue = _clauses(text, "舌")
+        coat = _clauses(text, "苔")
+        return (_match_terms(tongue, _TONGUE_BODY) | _match_terms(tongue, _TONGUE_SHAPE)
+                | _match_terms(coat, _COATING))
+
+    @staticmethod
+    def _extract_pulse(text: str) -> set[str]:
+        return _match_terms(_clauses(text, "脉"), _PULSE)
+
+    async def score(self, sample: Sample, pred: Prediction) -> Score:
+        gt, gp = self._gold_tongue(sample), self._gold_pulse(sample)
+        pt = self._extract_tongue(pred.text)
+        pp = self._extract_pulse(pred.text)
+        tp, tr, tf = _prf(gt, pt)
+        pp_, pr, pf = _prf(gp, pp)
+        comps = ([(tf, 1.0)] if gt else []) + ([(pf, 1.0)] if gp else [])
+        value = sum(s for s, _ in comps) / len(comps) if comps else 0.0
+        return Score(metric="tongue_pulse", value=value, detail={
+            "tongue_f1": tf, "tongue_p": tp, "tongue_r": tr,
+            "pulse_f1": pf, "pulse_p": pp_, "pulse_r": pr,
+            "gold_tongue": sorted(gt), "matched_tongue": sorted(gt & pt),
+            "gold_pulse": sorted(gp), "matched_pulse": sorted(gp & pp)})
+
+    def aggregate(self, scores: list[Score]) -> dict[str, Any]:
+        n = len(scores) or 1
+        return {"tongue_pulse_f1": sum(s.value for s in scores) / n,
+                "tongue_f1": sum(s.detail["tongue_f1"] for s in scores) / n,
+                "pulse_f1": sum(s.detail["pulse_f1"] for s in scores) / n,
+                "n": len(scores)}
+
+
 @register_metric("classics_ontology")
 class ClassicsOntology(_LexiconMetric):
     """古籍本体: did the answer ground itself in the correct classical source(s)?
@@ -191,10 +270,14 @@ class ClassicsOntology(_LexiconMetric):
 
     def __init__(self, config: dict[str, Any] | None = None):
         super().__init__(config)
-        cl = dict(_CLASSICS)
+        try:  # the classics KG is the single source of truth for aliases
+            from ..kg.tcm_classics import classics_alias_map
+            amap = dict(classics_alias_map())
+        except Exception:
+            amap = _alias_map(_CLASSICS)
         for c in self.extra["classics"]:
-            cl.setdefault(c, [c])
-        self._map = _alias_map(cl)
+            amap.setdefault(c, c)
+        self._map = amap
 
     def _gold(self, sample: Sample) -> set[str]:
         ref = sample.reference

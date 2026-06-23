@@ -66,6 +66,12 @@ class HFMCQAdapter(DatasetAdapter):
             "请只回答正确选项的字母。",
         )
         self.trust_remote_code = bool(config.get("trust_remote_code", False))
+        # multimodal: field_map.image may name a column (or list) of images;
+        # image_base is prepended to relative paths/URLs.
+        self.image_base = config.get("image_base", "")
+        # constant question when the data has no question column (e.g. an
+        # image-classification set: TCM-Ladder visual = image + category label)
+        self.question_text = config.get("question_text", "")
         if not self.metrics:
             self.metrics = ["mcq_accuracy"]
 
@@ -114,7 +120,10 @@ class HFMCQAdapter(DatasetAdapter):
         if opt is None and self.inject_options:
             return list(self.inject_options), []
         if isinstance(opt, list):  # N separate columns
-            return [str(row[c]) for c in opt], []
+            vals = ["" if row.get(c) is None else str(row[c]) for c in opt]
+            while len(vals) > 2 and not vals[-1].strip():  # drop trailing empty slots (e.g. blank E)
+                vals.pop()
+            return vals, []
         val = row[opt]
         if isinstance(val, dict):  # dict column {"A": ...} — drop null option slots
             keys = [k for k in val.keys() if val[k] is not None and str(val[k]).strip()]
@@ -196,7 +205,8 @@ class HFMCQAdapter(DatasetAdapter):
             return None
         if not choices:
             return None
-        question = str(row[self.fm["question"]])
+        qfield = self.fm.get("question")
+        question = str(row[qfield]) if qfield else self.question_text
         ctx_field = self.fm.get("context")
         context = ""
         if ctx_field and ctx_field in row and row[ctx_field]:
@@ -222,13 +232,63 @@ class HFMCQAdapter(DatasetAdapter):
         msgs = []
         if self.system_prompt:
             msgs.append(Message("system", self.system_prompt))
-        msgs.append(Message("user", user))
+        images = self._resolve_images(row)
+        msgs.append(Message("user", user, images=images or None))
         sid = f"{self.id}:{cfg or 'default'}:{row.get('id', i)}"
         return Sample(
             id=sid, task_type=TaskType.MCQ, messages=msgs,
             choices=choices, reference=reference,
             meta={"path": self.path, "config": cfg, "subject": row.get("subject")},
         )
+
+    # --- multimodal -------------------------------------------------------
+    def _resolve_images(self, row: dict[str, Any]) -> list[str]:
+        field = self.fm.get("image")
+        if not field:
+            return []
+        cols = field if isinstance(field, list) else [field]
+        out: list[str] = []
+        for c in cols:
+            if c in row and row[c] is not None:
+                out.extend(self._encode_image(row[c]))
+        return out
+
+    def _encode_image(self, val: Any) -> list[str]:
+        if isinstance(val, (bytes, bytearray)):  # raw image bytes (e.g. TCM-Ladder parquet)
+            import base64
+            mime = "image/png" if bytes(val[:8]).startswith(b"\x89PNG") else "image/jpeg"
+            return [f"data:{mime};base64,{base64.b64encode(bytes(val)).decode('ascii')}"]
+        if isinstance(val, str):
+            if val.startswith(("http://", "https://", "data:")):
+                return [val]
+            return [self.image_base + val]
+        if isinstance(val, dict):  # HF Image feature: {bytes, path} or {url}
+            if val.get("url"):
+                return [val["url"]]
+            if val.get("path"):
+                p = val["path"]
+                pre = self.image_base if not p.startswith(("http", "data:")) else ""
+                return [pre + p]
+            if val.get("bytes"):
+                import base64
+                return [f"data:image/png;base64,{base64.b64encode(val['bytes']).decode('ascii')}"]
+            return []
+        if isinstance(val, (list, tuple)):
+            out: list[str] = []
+            for v in val:
+                out.extend(self._encode_image(v))
+            return out
+        try:  # PIL.Image
+            import base64
+            import io
+            from PIL import Image as _PIL
+            if isinstance(val, _PIL.Image):
+                buf = io.BytesIO()
+                val.convert("RGB").save(buf, format="PNG")
+                return [f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"]
+        except Exception:
+            pass
+        return []
 
     def _render(self, question: str, choices: list[str], context: str) -> str:
         opt_block = "\n".join(f"{LETTERS[i]}. {c}" for i, c in enumerate(choices))

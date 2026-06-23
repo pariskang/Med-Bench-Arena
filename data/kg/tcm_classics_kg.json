@@ -1,0 +1,1585 @@
+{
+  "directed": true,
+  "namespace": "http://medeval.org/tcm/",
+  "nodes": [
+    {
+      "id": "张仲景",
+      "type": "author",
+      "label": "张仲景",
+      "aliases": [
+        "张机",
+        "医圣"
+      ]
+    },
+    {
+      "id": "东汉",
+      "type": "dynasty",
+      "label": "东汉"
+    },
+    {
+      "id": "王叔和",
+      "type": "author",
+      "label": "王叔和",
+      "aliases": [
+        "王熙"
+      ]
+    },
+    {
+      "id": "西晋",
+      "type": "dynasty",
+      "label": "西晋"
+    },
+    {
+      "id": "皇甫谧",
+      "type": "author",
+      "label": "皇甫谧",
+      "aliases": []
+    },
+    {
+      "id": "巢元方",
+      "type": "author",
+      "label": "巢元方",
+      "aliases": []
+    },
+    {
+      "id": "隋",
+      "type": "dynasty",
+      "label": "隋"
+    },
+    {
+      "id": "孙思邈",
+      "type": "author",
+      "label": "孙思邈",
+      "aliases": [
+        "药王"
+      ]
+    },
+    {
+      "id": "唐",
+      "type": "dynasty",
+      "label": "唐"
+    },
+    {
+      "id": "王焘",
+      "type": "author",
+      "label": "王焘",
+      "aliases": []
+    },
+    {
+      "id": "钱乙",
+      "type": "author",
+      "label": "钱乙",
+      "aliases": [
+        "钱仲阳"
+      ]
+    },
+    {
+      "id": "宋",
+      "type": "dynasty",
+      "label": "宋"
+    },
+    {
+      "id": "陈言",
+      "type": "author",
+      "label": "陈言",
+      "aliases": [
+        "陈无择"
+      ]
+    },
+    {
+      "id": "李杲",
+      "type": "author",
+      "label": "李杲",
+      "aliases": [
+        "李东垣",
+        "东垣"
+      ]
+    },
+    {
+      "id": "金",
+      "type": "dynasty",
+      "label": "金"
+    },
+    {
+      "id": "刘完素",
+      "type": "author",
+      "label": "刘完素",
+      "aliases": [
+        "刘河间",
+        "河间"
+      ]
+    },
+    {
+      "id": "张从正",
+      "type": "author",
+      "label": "张从正",
+      "aliases": [
+        "张子和",
+        "子和"
+      ]
+    },
+    {
+      "id": "朱震亨",
+      "type": "author",
+      "label": "朱震亨",
+      "aliases": [
+        "朱丹溪",
+        "丹溪"
+      ]
+    },
+    {
+      "id": "元",
+      "type": "dynasty",
+      "label": "元"
+    },
+    {
+      "id": "李时珍",
+      "type": "author",
+      "label": "李时珍",
+      "aliases": [
+        "李东璧",
+        "濒湖"
+      ]
+    },
+    {
+      "id": "明",
+      "type": "dynasty",
+      "label": "明"
+    },
+    {
+      "id": "张介宾",
+      "type": "author",
+      "label": "张介宾",
+      "aliases": [
+        "张景岳",
+        "景岳"
+      ]
+    },
+    {
+      "id": "吴有性",
+      "type": "author",
+      "label": "吴有性",
+      "aliases": [
+        "吴又可"
+      ]
+    },
+    {
+      "id": "吴谦",
+      "type": "author",
+      "label": "吴谦",
+      "aliases": []
+    },
+    {
+      "id": "清",
+      "type": "dynasty",
+      "label": "清"
+    },
+    {
+      "id": "叶桂",
+      "type": "author",
+      "label": "叶桂",
+      "aliases": [
+        "叶天士",
+        "天士"
+      ]
+    },
+    {
+      "id": "吴瑭",
+      "type": "author",
+      "label": "吴瑭",
+      "aliases": [
+        "吴鞠通",
+        "鞠通"
+      ]
+    },
+    {
+      "id": "薛雪",
+      "type": "author",
+      "label": "薛雪",
+      "aliases": [
+        "薛生白"
+      ]
+    },
+    {
+      "id": "王清任",
+      "type": "author",
+      "label": "王清任",
+      "aliases": [
+        "王勋臣"
+      ]
+    },
+    {
+      "id": "唐宗海",
+      "type": "author",
+      "label": "唐宗海",
+      "aliases": [
+        "唐容川"
+      ]
+    },
+    {
+      "id": "王肯堂",
+      "type": "author",
+      "label": "王肯堂",
+      "aliases": []
+    },
+    {
+      "id": "程国彭",
+      "type": "author",
+      "label": "程国彭",
+      "aliases": [
+        "程钟龄"
+      ]
+    },
+    {
+      "id": "黄帝内经",
+      "type": "classic",
+      "label": "黄帝内经",
+      "dynasty": "战国秦汉",
+      "category": "医经",
+      "aliases": [
+        "内经"
+      ]
+    },
+    {
+      "id": "战国秦汉",
+      "type": "dynasty",
+      "label": "战国秦汉"
+    },
+    {
+      "id": "医经",
+      "type": "category",
+      "label": "医经"
+    },
+    {
+      "id": "托名黄帝",
+      "type": "author",
+      "label": "托名黄帝",
+      "aliases": []
+    },
+    {
+      "id": "素问",
+      "type": "classic",
+      "label": "素问",
+      "dynasty": "战国秦汉",
+      "category": "医经",
+      "aliases": [
+        "黄帝内经素问"
+      ]
+    },
+    {
+      "id": "灵枢",
+      "type": "classic",
+      "label": "灵枢",
+      "dynasty": "战国秦汉",
+      "category": "医经",
+      "aliases": [
+        "灵枢经"
+      ]
+    },
+    {
+      "id": "难经",
+      "type": "classic",
+      "label": "难经",
+      "dynasty": "秦汉",
+      "category": "医经",
+      "aliases": [
+        "黄帝八十一难经"
+      ]
+    },
+    {
+      "id": "秦汉",
+      "type": "dynasty",
+      "label": "秦汉"
+    },
+    {
+      "id": "托名扁鹊",
+      "type": "author",
+      "label": "托名扁鹊",
+      "aliases": []
+    },
+    {
+      "id": "神农本草经",
+      "type": "classic",
+      "label": "神农本草经",
+      "dynasty": "秦汉",
+      "category": "本草",
+      "aliases": [
+        "本草经",
+        "本经"
+      ]
+    },
+    {
+      "id": "本草",
+      "type": "category",
+      "label": "本草"
+    },
+    {
+      "id": "托名神农",
+      "type": "author",
+      "label": "托名神农",
+      "aliases": []
+    },
+    {
+      "id": "伤寒杂病论",
+      "type": "classic",
+      "label": "伤寒杂病论",
+      "dynasty": "东汉",
+      "category": "经方",
+      "aliases": []
+    },
+    {
+      "id": "经方",
+      "type": "category",
+      "label": "经方"
+    },
+    {
+      "id": "伤寒论",
+      "type": "classic",
+      "label": "伤寒论",
+      "dynasty": "东汉",
+      "category": "经方",
+      "aliases": [
+        "伤寒"
+      ]
+    },
+    {
+      "id": "金匮要略",
+      "type": "classic",
+      "label": "金匮要略",
+      "dynasty": "东汉",
+      "category": "经方",
+      "aliases": [
+        "金匮"
+      ]
+    },
+    {
+      "id": "脉经",
+      "type": "classic",
+      "label": "脉经",
+      "dynasty": "西晋",
+      "category": "诊法",
+      "aliases": []
+    },
+    {
+      "id": "诊法",
+      "type": "category",
+      "label": "诊法"
+    },
+    {
+      "id": "针灸甲乙经",
+      "type": "classic",
+      "label": "针灸甲乙经",
+      "dynasty": "西晋",
+      "category": "针灸",
+      "aliases": [
+        "甲乙经"
+      ]
+    },
+    {
+      "id": "针灸",
+      "type": "category",
+      "label": "针灸"
+    },
+    {
+      "id": "诸病源候论",
+      "type": "classic",
+      "label": "诸病源候论",
+      "dynasty": "隋",
+      "category": "病机",
+      "aliases": [
+        "病源"
+      ]
+    },
+    {
+      "id": "病机",
+      "type": "category",
+      "label": "病机"
+    },
+    {
+      "id": "备急千金要方",
+      "type": "classic",
+      "label": "备急千金要方",
+      "dynasty": "唐",
+      "category": "方书",
+      "aliases": [
+        "千金要方",
+        "千金方"
+      ]
+    },
+    {
+      "id": "方书",
+      "type": "category",
+      "label": "方书"
+    },
+    {
+      "id": "千金翼方",
+      "type": "classic",
+      "label": "千金翼方",
+      "dynasty": "唐",
+      "category": "方书",
+      "aliases": []
+    },
+    {
+      "id": "外台秘要",
+      "type": "classic",
+      "label": "外台秘要",
+      "dynasty": "唐",
+      "category": "方书",
+      "aliases": [
+        "外台"
+      ]
+    },
+    {
+      "id": "太平惠民和剂局方",
+      "type": "classic",
+      "label": "太平惠民和剂局方",
+      "dynasty": "宋",
+      "category": "方书",
+      "aliases": [
+        "和剂局方",
+        "局方"
+      ]
+    },
+    {
+      "id": "陈师文",
+      "type": "author",
+      "label": "陈师文",
+      "aliases": []
+    },
+    {
+      "id": "小儿药证直诀",
+      "type": "classic",
+      "label": "小儿药证直诀",
+      "dynasty": "宋",
+      "category": "儿科",
+      "aliases": []
+    },
+    {
+      "id": "儿科",
+      "type": "category",
+      "label": "儿科"
+    },
+    {
+      "id": "三因极一病证方论",
+      "type": "classic",
+      "label": "三因极一病证方论",
+      "dynasty": "宋",
+      "category": "病因",
+      "aliases": [
+        "三因方"
+      ]
+    },
+    {
+      "id": "病因",
+      "type": "category",
+      "label": "病因"
+    },
+    {
+      "id": "脾胃论",
+      "type": "classic",
+      "label": "脾胃论",
+      "dynasty": "金",
+      "category": "内伤",
+      "aliases": []
+    },
+    {
+      "id": "内伤",
+      "type": "category",
+      "label": "内伤"
+    },
+    {
+      "id": "内外伤辨惑论",
+      "type": "classic",
+      "label": "内外伤辨惑论",
+      "dynasty": "金",
+      "category": "内伤",
+      "aliases": []
+    },
+    {
+      "id": "素问玄机原病式",
+      "type": "classic",
+      "label": "素问玄机原病式",
+      "dynasty": "金",
+      "category": "运气",
+      "aliases": []
+    },
+    {
+      "id": "运气",
+      "type": "category",
+      "label": "运气"
+    },
+    {
+      "id": "儒门事亲",
+      "type": "classic",
+      "label": "儒门事亲",
+      "dynasty": "金",
+      "category": "攻邪",
+      "aliases": []
+    },
+    {
+      "id": "攻邪",
+      "type": "category",
+      "label": "攻邪"
+    },
+    {
+      "id": "丹溪心法",
+      "type": "classic",
+      "label": "丹溪心法",
+      "dynasty": "元",
+      "category": "杂病",
+      "aliases": []
+    },
+    {
+      "id": "杂病",
+      "type": "category",
+      "label": "杂病"
+    },
+    {
+      "id": "格致余论",
+      "type": "classic",
+      "label": "格致余论",
+      "dynasty": "元",
+      "category": "医论",
+      "aliases": []
+    },
+    {
+      "id": "医论",
+      "type": "category",
+      "label": "医论"
+    },
+    {
+      "id": "本草纲目",
+      "type": "classic",
+      "label": "本草纲目",
+      "dynasty": "明",
+      "category": "本草",
+      "aliases": [
+        "纲目"
+      ]
+    },
+    {
+      "id": "濒湖脉学",
+      "type": "classic",
+      "label": "濒湖脉学",
+      "dynasty": "明",
+      "category": "诊法",
+      "aliases": []
+    },
+    {
+      "id": "景岳全书",
+      "type": "classic",
+      "label": "景岳全书",
+      "dynasty": "明",
+      "category": "综合",
+      "aliases": []
+    },
+    {
+      "id": "综合",
+      "type": "category",
+      "label": "综合"
+    },
+    {
+      "id": "温疫论",
+      "type": "classic",
+      "label": "温疫论",
+      "dynasty": "明",
+      "category": "温病",
+      "aliases": [
+        "瘟疫论"
+      ]
+    },
+    {
+      "id": "温病",
+      "type": "category",
+      "label": "温病"
+    },
+    {
+      "id": "医宗金鉴",
+      "type": "classic",
+      "label": "医宗金鉴",
+      "dynasty": "清",
+      "category": "综合",
+      "aliases": []
+    },
+    {
+      "id": "温热论",
+      "type": "classic",
+      "label": "温热论",
+      "dynasty": "清",
+      "category": "温病",
+      "aliases": []
+    },
+    {
+      "id": "温病条辨",
+      "type": "classic",
+      "label": "温病条辨",
+      "dynasty": "清",
+      "category": "温病",
+      "aliases": []
+    },
+    {
+      "id": "湿热条辨",
+      "type": "classic",
+      "label": "湿热条辨",
+      "dynasty": "清",
+      "category": "温病",
+      "aliases": [
+        "湿热病篇"
+      ]
+    },
+    {
+      "id": "医林改错",
+      "type": "classic",
+      "label": "医林改错",
+      "dynasty": "清",
+      "category": "瘀血",
+      "aliases": []
+    },
+    {
+      "id": "瘀血",
+      "type": "category",
+      "label": "瘀血"
+    },
+    {
+      "id": "血证论",
+      "type": "classic",
+      "label": "血证论",
+      "dynasty": "清",
+      "category": "血证",
+      "aliases": []
+    },
+    {
+      "id": "血证",
+      "type": "category",
+      "label": "血证"
+    },
+    {
+      "id": "证治准绳",
+      "type": "classic",
+      "label": "证治准绳",
+      "dynasty": "明",
+      "category": "综合",
+      "aliases": []
+    },
+    {
+      "id": "医学心悟",
+      "type": "classic",
+      "label": "医学心悟",
+      "dynasty": "清",
+      "category": "综合",
+      "aliases": []
+    },
+    {
+      "id": "桂枝汤",
+      "type": "formula",
+      "label": "桂枝汤"
+    },
+    {
+      "id": "麻黄汤",
+      "type": "formula",
+      "label": "麻黄汤"
+    },
+    {
+      "id": "小柴胡汤",
+      "type": "formula",
+      "label": "小柴胡汤"
+    },
+    {
+      "id": "白虎汤",
+      "type": "formula",
+      "label": "白虎汤"
+    },
+    {
+      "id": "四逆汤",
+      "type": "formula",
+      "label": "四逆汤"
+    },
+    {
+      "id": "理中丸",
+      "type": "formula",
+      "label": "理中丸"
+    },
+    {
+      "id": "大承气汤",
+      "type": "formula",
+      "label": "大承气汤"
+    },
+    {
+      "id": "五苓散",
+      "type": "formula",
+      "label": "五苓散"
+    },
+    {
+      "id": "炙甘草汤",
+      "type": "formula",
+      "label": "炙甘草汤"
+    },
+    {
+      "id": "肾气丸",
+      "type": "formula",
+      "label": "肾气丸"
+    },
+    {
+      "id": "大黄牡丹汤",
+      "type": "formula",
+      "label": "大黄牡丹汤"
+    },
+    {
+      "id": "麦门冬汤",
+      "type": "formula",
+      "label": "麦门冬汤"
+    },
+    {
+      "id": "当归芍药散",
+      "type": "formula",
+      "label": "当归芍药散"
+    },
+    {
+      "id": "六味地黄丸",
+      "type": "formula",
+      "label": "六味地黄丸"
+    },
+    {
+      "id": "补中益气汤",
+      "type": "formula",
+      "label": "补中益气汤"
+    },
+    {
+      "id": "清暑益气汤",
+      "type": "formula",
+      "label": "清暑益气汤"
+    },
+    {
+      "id": "银翘散",
+      "type": "formula",
+      "label": "银翘散"
+    },
+    {
+      "id": "桑菊饮",
+      "type": "formula",
+      "label": "桑菊饮"
+    },
+    {
+      "id": "清营汤",
+      "type": "formula",
+      "label": "清营汤"
+    },
+    {
+      "id": "安宫牛黄丸",
+      "type": "formula",
+      "label": "安宫牛黄丸"
+    },
+    {
+      "id": "血府逐瘀汤",
+      "type": "formula",
+      "label": "血府逐瘀汤"
+    },
+    {
+      "id": "补阳还五汤",
+      "type": "formula",
+      "label": "补阳还五汤"
+    },
+    {
+      "id": "越鞠丸",
+      "type": "formula",
+      "label": "越鞠丸"
+    },
+    {
+      "id": "逍遥散",
+      "type": "formula",
+      "label": "逍遥散"
+    },
+    {
+      "id": "四君子汤",
+      "type": "formula",
+      "label": "四君子汤"
+    }
+  ],
+  "links": [
+    {
+      "source": "张仲景",
+      "target": "东汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "王叔和",
+      "target": "西晋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "皇甫谧",
+      "target": "西晋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "巢元方",
+      "target": "隋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "孙思邈",
+      "target": "唐",
+      "relation": "dynasty"
+    },
+    {
+      "source": "王焘",
+      "target": "唐",
+      "relation": "dynasty"
+    },
+    {
+      "source": "钱乙",
+      "target": "宋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "陈言",
+      "target": "宋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "李杲",
+      "target": "金",
+      "relation": "dynasty"
+    },
+    {
+      "source": "刘完素",
+      "target": "金",
+      "relation": "dynasty"
+    },
+    {
+      "source": "张从正",
+      "target": "金",
+      "relation": "dynasty"
+    },
+    {
+      "source": "朱震亨",
+      "target": "元",
+      "relation": "dynasty"
+    },
+    {
+      "source": "李时珍",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "张介宾",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "吴有性",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "吴谦",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "叶桂",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "吴瑭",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "薛雪",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "王清任",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "唐宗海",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "王肯堂",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "程国彭",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "黄帝内经",
+      "target": "战国秦汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "黄帝内经",
+      "target": "医经",
+      "relation": "category"
+    },
+    {
+      "source": "黄帝内经",
+      "target": "托名黄帝",
+      "relation": "authored_by"
+    },
+    {
+      "source": "素问",
+      "target": "战国秦汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "素问",
+      "target": "医经",
+      "relation": "category"
+    },
+    {
+      "source": "素问",
+      "target": "托名黄帝",
+      "relation": "authored_by"
+    },
+    {
+      "source": "素问",
+      "target": "黄帝内经",
+      "relation": "part_of"
+    },
+    {
+      "source": "灵枢",
+      "target": "战国秦汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "灵枢",
+      "target": "医经",
+      "relation": "category"
+    },
+    {
+      "source": "灵枢",
+      "target": "托名黄帝",
+      "relation": "authored_by"
+    },
+    {
+      "source": "灵枢",
+      "target": "黄帝内经",
+      "relation": "part_of"
+    },
+    {
+      "source": "难经",
+      "target": "秦汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "难经",
+      "target": "医经",
+      "relation": "category"
+    },
+    {
+      "source": "难经",
+      "target": "托名扁鹊",
+      "relation": "authored_by"
+    },
+    {
+      "source": "神农本草经",
+      "target": "秦汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "神农本草经",
+      "target": "本草",
+      "relation": "category"
+    },
+    {
+      "source": "神农本草经",
+      "target": "托名神农",
+      "relation": "authored_by"
+    },
+    {
+      "source": "伤寒杂病论",
+      "target": "东汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "伤寒杂病论",
+      "target": "经方",
+      "relation": "category"
+    },
+    {
+      "source": "伤寒杂病论",
+      "target": "张仲景",
+      "relation": "authored_by"
+    },
+    {
+      "source": "伤寒论",
+      "target": "东汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "伤寒论",
+      "target": "经方",
+      "relation": "category"
+    },
+    {
+      "source": "伤寒论",
+      "target": "张仲景",
+      "relation": "authored_by"
+    },
+    {
+      "source": "伤寒论",
+      "target": "伤寒杂病论",
+      "relation": "part_of"
+    },
+    {
+      "source": "金匮要略",
+      "target": "东汉",
+      "relation": "dynasty"
+    },
+    {
+      "source": "金匮要略",
+      "target": "经方",
+      "relation": "category"
+    },
+    {
+      "source": "金匮要略",
+      "target": "张仲景",
+      "relation": "authored_by"
+    },
+    {
+      "source": "金匮要略",
+      "target": "伤寒杂病论",
+      "relation": "part_of"
+    },
+    {
+      "source": "脉经",
+      "target": "西晋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "脉经",
+      "target": "诊法",
+      "relation": "category"
+    },
+    {
+      "source": "脉经",
+      "target": "王叔和",
+      "relation": "authored_by"
+    },
+    {
+      "source": "针灸甲乙经",
+      "target": "西晋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "针灸甲乙经",
+      "target": "针灸",
+      "relation": "category"
+    },
+    {
+      "source": "针灸甲乙经",
+      "target": "皇甫谧",
+      "relation": "authored_by"
+    },
+    {
+      "source": "诸病源候论",
+      "target": "隋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "诸病源候论",
+      "target": "病机",
+      "relation": "category"
+    },
+    {
+      "source": "诸病源候论",
+      "target": "巢元方",
+      "relation": "authored_by"
+    },
+    {
+      "source": "备急千金要方",
+      "target": "唐",
+      "relation": "dynasty"
+    },
+    {
+      "source": "备急千金要方",
+      "target": "方书",
+      "relation": "category"
+    },
+    {
+      "source": "备急千金要方",
+      "target": "孙思邈",
+      "relation": "authored_by"
+    },
+    {
+      "source": "千金翼方",
+      "target": "唐",
+      "relation": "dynasty"
+    },
+    {
+      "source": "千金翼方",
+      "target": "方书",
+      "relation": "category"
+    },
+    {
+      "source": "千金翼方",
+      "target": "孙思邈",
+      "relation": "authored_by"
+    },
+    {
+      "source": "外台秘要",
+      "target": "唐",
+      "relation": "dynasty"
+    },
+    {
+      "source": "外台秘要",
+      "target": "方书",
+      "relation": "category"
+    },
+    {
+      "source": "外台秘要",
+      "target": "王焘",
+      "relation": "authored_by"
+    },
+    {
+      "source": "太平惠民和剂局方",
+      "target": "宋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "太平惠民和剂局方",
+      "target": "方书",
+      "relation": "category"
+    },
+    {
+      "source": "太平惠民和剂局方",
+      "target": "陈师文",
+      "relation": "authored_by"
+    },
+    {
+      "source": "小儿药证直诀",
+      "target": "宋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "小儿药证直诀",
+      "target": "儿科",
+      "relation": "category"
+    },
+    {
+      "source": "小儿药证直诀",
+      "target": "钱乙",
+      "relation": "authored_by"
+    },
+    {
+      "source": "三因极一病证方论",
+      "target": "宋",
+      "relation": "dynasty"
+    },
+    {
+      "source": "三因极一病证方论",
+      "target": "病因",
+      "relation": "category"
+    },
+    {
+      "source": "三因极一病证方论",
+      "target": "陈言",
+      "relation": "authored_by"
+    },
+    {
+      "source": "脾胃论",
+      "target": "金",
+      "relation": "dynasty"
+    },
+    {
+      "source": "脾胃论",
+      "target": "内伤",
+      "relation": "category"
+    },
+    {
+      "source": "脾胃论",
+      "target": "李杲",
+      "relation": "authored_by"
+    },
+    {
+      "source": "内外伤辨惑论",
+      "target": "金",
+      "relation": "dynasty"
+    },
+    {
+      "source": "内外伤辨惑论",
+      "target": "内伤",
+      "relation": "category"
+    },
+    {
+      "source": "内外伤辨惑论",
+      "target": "李杲",
+      "relation": "authored_by"
+    },
+    {
+      "source": "素问玄机原病式",
+      "target": "金",
+      "relation": "dynasty"
+    },
+    {
+      "source": "素问玄机原病式",
+      "target": "运气",
+      "relation": "category"
+    },
+    {
+      "source": "素问玄机原病式",
+      "target": "刘完素",
+      "relation": "authored_by"
+    },
+    {
+      "source": "儒门事亲",
+      "target": "金",
+      "relation": "dynasty"
+    },
+    {
+      "source": "儒门事亲",
+      "target": "攻邪",
+      "relation": "category"
+    },
+    {
+      "source": "儒门事亲",
+      "target": "张从正",
+      "relation": "authored_by"
+    },
+    {
+      "source": "丹溪心法",
+      "target": "元",
+      "relation": "dynasty"
+    },
+    {
+      "source": "丹溪心法",
+      "target": "杂病",
+      "relation": "category"
+    },
+    {
+      "source": "丹溪心法",
+      "target": "朱震亨",
+      "relation": "authored_by"
+    },
+    {
+      "source": "格致余论",
+      "target": "元",
+      "relation": "dynasty"
+    },
+    {
+      "source": "格致余论",
+      "target": "医论",
+      "relation": "category"
+    },
+    {
+      "source": "格致余论",
+      "target": "朱震亨",
+      "relation": "authored_by"
+    },
+    {
+      "source": "本草纲目",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "本草纲目",
+      "target": "本草",
+      "relation": "category"
+    },
+    {
+      "source": "本草纲目",
+      "target": "李时珍",
+      "relation": "authored_by"
+    },
+    {
+      "source": "濒湖脉学",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "濒湖脉学",
+      "target": "诊法",
+      "relation": "category"
+    },
+    {
+      "source": "濒湖脉学",
+      "target": "李时珍",
+      "relation": "authored_by"
+    },
+    {
+      "source": "景岳全书",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "景岳全书",
+      "target": "综合",
+      "relation": "category"
+    },
+    {
+      "source": "景岳全书",
+      "target": "张介宾",
+      "relation": "authored_by"
+    },
+    {
+      "source": "温疫论",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "温疫论",
+      "target": "温病",
+      "relation": "category"
+    },
+    {
+      "source": "温疫论",
+      "target": "吴有性",
+      "relation": "authored_by"
+    },
+    {
+      "source": "医宗金鉴",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "医宗金鉴",
+      "target": "综合",
+      "relation": "category"
+    },
+    {
+      "source": "医宗金鉴",
+      "target": "吴谦",
+      "relation": "authored_by"
+    },
+    {
+      "source": "温热论",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "温热论",
+      "target": "温病",
+      "relation": "category"
+    },
+    {
+      "source": "温热论",
+      "target": "叶桂",
+      "relation": "authored_by"
+    },
+    {
+      "source": "温病条辨",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "温病条辨",
+      "target": "温病",
+      "relation": "category"
+    },
+    {
+      "source": "温病条辨",
+      "target": "吴瑭",
+      "relation": "authored_by"
+    },
+    {
+      "source": "湿热条辨",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "湿热条辨",
+      "target": "温病",
+      "relation": "category"
+    },
+    {
+      "source": "湿热条辨",
+      "target": "薛雪",
+      "relation": "authored_by"
+    },
+    {
+      "source": "医林改错",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "医林改错",
+      "target": "瘀血",
+      "relation": "category"
+    },
+    {
+      "source": "医林改错",
+      "target": "王清任",
+      "relation": "authored_by"
+    },
+    {
+      "source": "血证论",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "血证论",
+      "target": "血证",
+      "relation": "category"
+    },
+    {
+      "source": "血证论",
+      "target": "唐宗海",
+      "relation": "authored_by"
+    },
+    {
+      "source": "证治准绳",
+      "target": "明",
+      "relation": "dynasty"
+    },
+    {
+      "source": "证治准绳",
+      "target": "综合",
+      "relation": "category"
+    },
+    {
+      "source": "证治准绳",
+      "target": "王肯堂",
+      "relation": "authored_by"
+    },
+    {
+      "source": "医学心悟",
+      "target": "清",
+      "relation": "dynasty"
+    },
+    {
+      "source": "医学心悟",
+      "target": "综合",
+      "relation": "category"
+    },
+    {
+      "source": "医学心悟",
+      "target": "程国彭",
+      "relation": "authored_by"
+    },
+    {
+      "source": "桂枝汤",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "麻黄汤",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "小柴胡汤",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "白虎汤",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "四逆汤",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "理中丸",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "大承气汤",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "五苓散",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "炙甘草汤",
+      "target": "伤寒论",
+      "relation": "from_source"
+    },
+    {
+      "source": "肾气丸",
+      "target": "金匮要略",
+      "relation": "from_source"
+    },
+    {
+      "source": "大黄牡丹汤",
+      "target": "金匮要略",
+      "relation": "from_source"
+    },
+    {
+      "source": "麦门冬汤",
+      "target": "金匮要略",
+      "relation": "from_source"
+    },
+    {
+      "source": "当归芍药散",
+      "target": "金匮要略",
+      "relation": "from_source"
+    },
+    {
+      "source": "六味地黄丸",
+      "target": "小儿药证直诀",
+      "relation": "from_source"
+    },
+    {
+      "source": "补中益气汤",
+      "target": "脾胃论",
+      "relation": "from_source"
+    },
+    {
+      "source": "清暑益气汤",
+      "target": "脾胃论",
+      "relation": "from_source"
+    },
+    {
+      "source": "银翘散",
+      "target": "温病条辨",
+      "relation": "from_source"
+    },
+    {
+      "source": "桑菊饮",
+      "target": "温病条辨",
+      "relation": "from_source"
+    },
+    {
+      "source": "清营汤",
+      "target": "温病条辨",
+      "relation": "from_source"
+    },
+    {
+      "source": "安宫牛黄丸",
+      "target": "温病条辨",
+      "relation": "from_source"
+    },
+    {
+      "source": "血府逐瘀汤",
+      "target": "医林改错",
+      "relation": "from_source"
+    },
+    {
+      "source": "补阳还五汤",
+      "target": "医林改错",
+      "relation": "from_source"
+    },
+    {
+      "source": "越鞠丸",
+      "target": "丹溪心法",
+      "relation": "from_source"
+    },
+    {
+      "source": "逍遥散",
+      "target": "太平惠民和剂局方",
+      "relation": "from_source"
+    },
+    {
+      "source": "四君子汤",
+      "target": "太平惠民和剂局方",
+      "relation": "from_source"
+    }
+  ]
+}

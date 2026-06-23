@@ -84,6 +84,25 @@ Legend: ✅ open & config-only · ⚠️ open but needs care · 🔒 gated / man
 {adapter: tcmbench, source_url: https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/FKU.json}
 ```
 
+### TCM-Ladder ✅ (multimodal)
+- **Repo:** `timzzyus/TCM-Ladder` (HF, **open, CC-BY-4.0**, ungated; arXiv 2505.24063).
+  The HF auto-config is broken — load each parquet via `data_files`.
+- **`multiChoice.parquet`** (12,778): bilingual text MCQ. Options are **5 separate
+  columns `A`–`E`** (`E` empty in ~2k 4-option rows → the adapter drops the blank
+  trailing slot); `answer` = letter(s), multi-correct concatenated ("ABCDE") → `multi`.
+  Also `category` (subject), `type` (Single/Multiple), `lang`.
+- **`visual.parquet`** (8,802): tongue + herb images as **raw JPEG bytes** in a parquet
+  `binary` column (handled by `_encode_image`), `answer` letter, `category` ∈ {herb, tongue}.
+  **No question/option text** — the 4-image MCQ is assembled at eval time and its
+  distractors aren't in the file; wired as image→modality classification via
+  `question_text` + `inject_options: [herb, tongue]` (`config/example_tcm_ladder.yaml`).
+  ~730 MB — use `--limit`. No pulse/audio is released on HF.
+```yaml
+{adapter: hf_mcq, format: parquet,
+ data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/main/multiChoice.parquet,
+ field_map: {question: question, options: [A,B,C,D,E], answer: answer}, answer_format: multi}
+```
+
 ### MLEC-QA 🔒
 - `Judenpech/MLEC-QA` (EMNLP 2021). **Data is NOT in the repo** — a Google-Drive ZIP
   (`mlec-qa.zip`, file id `1-v4c8bcTspgBINKticTF7A9OMum0CB_y`) behind **Google sign-in**,

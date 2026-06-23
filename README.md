@@ -49,10 +49,11 @@ medeval/
 ├── providers/{base,hf,poe,litellm_provider,mock}.py
 ├── datasets/{base,hf_mcq,local_json,agent_env,tcmbench,medbench,medagentbench_grader}.py
 ├── metrics/{base,mcq,llm_judge,text_match,prescription,syndrome,tcm_struct}.py
+├── kg/tcm_classics.py         # 经典文献 knowledge graph (JSON/Turtle/GraphML)
 ├── runner.py                  # orchestrator
 ├── submit.py                  # OpenCompass / MedBench submission export
-├── distributed.py             # strided sharding · merge · local pool launcher
-└── cli.py                     # python -m medeval run|list|export|merge|pool
+├── distributed.py             # sharding · merge · local/Ray/Slurm launchers
+└── cli.py                     # python -m medeval run|list|export|merge|pool|slurm|kg
 ```
 
 ---
@@ -109,6 +110,7 @@ medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 
 | Dataset | Adapter | Task / Metric | Access |
 |---|---|---|---|
+| TCM-Ladder (text + 舌象/herb images) | `hf_mcq` | mcq_accuracy | `timzzyus/TCM-Ladder` (open, multimodal) |
 | MedQA (USMLE) | `hf_mcq` | mcq_accuracy | `GBaker/MedQA-USMLE-4-options` |
 | MedMCQA | `hf_mcq` | mcq_accuracy | `openlifescienceai/medmcqa` (use **validation**) |
 | PubMedQA | `hf_mcq` | mcq_accuracy | `qiaojin/PubMedQA` / `pqa_labeled` (inject yes/no/maybe) |
@@ -167,10 +169,13 @@ API. **Mode B** (production): serve HF with `vllm serve`, route everything
 - `meridian_acupoint` — **经络腧穴**: set-F1 over canonical meridians (12 正经 + 奇经)
   and acupoints, with alias normalization (胃经 → 足阳明胃经) — targets the subdomain
   models are weakest on.
+- `tongue_pulse` — **舌象/脉象**: clause-anchored set-F1 over tongue features
+  (舌色/舌形/苔) and pulse features (脉) — for multimodal 舌诊/脉诊 (e.g. TCM-Ladder);
+  won't grab 红 from 面色红润.
 - `classics_ontology` — **古籍本体**: did the answer ground itself in the correct
   classical source(s) (《伤寒论》《黄帝内经》…)? Set-F1 + `all_sources_cited`, with
-  longest-match dedup (伤寒杂病论 ≠ 伤寒论). Both lexicons are extensible
-  (`extra_acupoints` / `extra_classics` / `lexicon_file`).
+  longest-match dedup (伤寒杂病论 ≠ 伤寒论). Aliases come from the classics
+  **knowledge graph** (below); lexicons extensible (`extra_*` / `lexicon_file`).
 
 Multiple metrics per dataset are supported — e.g. TCMEval-SDT runs
 `[llm_judge, syndrome_chain, bleu, rouge]` and MTCMB-FRD runs
@@ -196,6 +201,37 @@ docker pull jyxsu6/medagentbench:latest
 docker run -p 8080:8080 jyxsu6/medagentbench:latest      # serves :8080/fhir
 curl http://localhost:8080/fhir/metadata                 # verify
 python -m medeval run configs/example_medagentbench.yaml --limit 10
+```
+
+## Multimodal (舌象 / 脉象)
+
+`Message` carries optional `images` (http/data URIs or local paths → auto data-URI);
+`to_openai()` emits OpenAI/LiteLLM **content blocks**, so LiteLLM and Poe vision
+models work unchanged. The `hf_mcq` adapter takes an `image` field (URL / local path
+/ HF `Image` dict / **raw parquet bytes** / PIL), and `question_text` supplies a
+constant prompt for image-classification sets without a question column.
+
+**TCM-Ladder** (`timzzyus/TCM-Ladder`, CC-BY-4.0, open) is wired in
+`configs/example_tcm_ladder.yaml`: the 12,778-item bilingual text MCQ set works
+as-is, and the tongue/herb `visual.parquet` (raw JPEG bytes) drives the
+bytes→data-URL→vision pipeline. Pair image 舌象 tasks with the `tongue_pulse` metric.
+
+## Knowledge graph (古籍本体)
+
+The classical-literature ontology is a real, downloadable **knowledge graph** —
+35 classics + authors + dynasties + 25 经典名方, linked by `authored_by` /
+`dynasty` / `part_of` / `from_source` / `category`. It is the single source of
+truth for `classics_ontology`'s aliases. Prebuilt artifacts ship in `data/kg/`
+(node-link JSON · RDF Turtle · GraphML); (re)build/query with:
+
+```bash
+python -m medeval kg --out data/kg --stats      # 116 nodes, 157 edges
+```
+```python
+from medeval import get_kg
+kg = get_kg()
+kg.source_of_formula("银翘散")   # -> 温病条辨
+kg.author_of("金匮要略")         # -> 张仲景
 ```
 
 ## Distributed scheduling
@@ -277,7 +313,9 @@ in YAML.
   have unit tests.
 - Caveats, gating and field maps per dataset: [`DATASETS.md`](DATASETS.md).
 
-Metrics include F1 / ROUGE / BLEU / 方剂结构匹配 / 证型链结构分 / 经络腧穴 / 古籍本体;
-MedAgentBench is wired to a live FHIR server (built-in grader, official `refsol.py`
-pluggable); results export to OpenCompass / MedBench submission formats; runs
-distribute via strided sharding + merge across **local / Ray / Slurm** backends.
+Metrics include F1 / ROUGE / BLEU / 方剂结构匹配 / 证型链结构分 / 经络腧穴 / 舌象脉象 /
+古籍本体; multimodal (舌象/herb images) via content blocks + TCM-Ladder; the classical
+ontology is a downloadable knowledge graph; MedAgentBench runs against a live FHIR
+server; results export to OpenCompass / MedBench; runs distribute across
+**local / Ray / Slurm**. Further extension points: live/anti-contamination benchmarks
+and richer multimodal scoring.
