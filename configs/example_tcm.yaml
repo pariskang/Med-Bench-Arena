@@ -47,8 +47,9 @@ datasets:
     adapter: local_json
     task: sdt                    # -> default 证型链 rubric (with 同病异治 partial credit)
     source_url: https://raw.githubusercontent.com/zhuyan166/TCMEval/main/evaluation/TCMEval-SDT/data/Train_TCM_Data_v1.json
-    field_map: {prompt: "Clinical Data", reference: "Syndrome Differentiation", label: "TCM Syndrome"}
-    metrics: [llm_judge, f1, rouge]   # rubric judge + token-overlap vs the gold 辨证
+    field_map: {prompt: "Clinical Data", reference: "Syndrome Differentiation",
+                label: "TCM Syndrome", pathogenesis: "TCM Pathogenesis"}
+    metrics: [llm_judge, syndrome_chain, bleu, rouge]   # 证型链结构分 + 文本重合 + rubric
 
   # --- prescription 方剂生成 ---
   - id: mtcmb_frd

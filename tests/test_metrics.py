@@ -64,6 +64,31 @@ def test_prescription_match_stringified_list_reference():
     assert sc.detail["n_ref_herbs"] == 3
 
 
+def test_bleu_orders_and_smoothing():
+    s = _sample("a b c d e f g h")
+    full = _score("bleu", s, _pred("a b c d e f g h"))
+    assert full.value > 0.99 and full.detail["bleu1"] > 0.99
+    # partial overlap, no 4-gram match -> smoothed (small but > 0)
+    part = _score("bleu", s, _pred("a c e g"))
+    assert 0.0 < part.value < full.value
+
+
+def test_syndrome_chain_tongbing_yizhi_partial_credit():
+    ref = {"syndrome": "热伤阳络;血热妄行",
+           "pathogenesis": "热伤肺络，血热妄行",
+           "reference": "辨证：热伤阳络，血热妄行"}
+    s = Sample(id="c", task_type=TaskType.SDT, messages=[Message("user", "q")], reference=ref)
+    one = _score("syndrome_chain", s, _pred("证型：血热妄行。病机为热伤肺络，血热妄行。"))
+    both = _score("syndrome_chain", s, _pred("辨证：热伤阳络，血热妄行。病机：热伤肺络血热妄行。"))
+    assert one.detail["syndrome_recall"] == 0.5       # 1 of 2 acceptable syndromes
+    assert both.detail["syndrome_recall"] == 1.0
+    assert both.value > one.value                      # more chain coverage scores higher
+    # no gold at all -> 0
+    empty = _score("syndrome_chain", Sample(id="e", task_type=TaskType.SDT,
+                   messages=[Message("user", "q")], reference={}), _pred("anything"))
+    assert empty.value == 0.0
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

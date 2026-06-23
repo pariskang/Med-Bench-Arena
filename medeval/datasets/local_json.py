@@ -189,6 +189,13 @@ class LocalJSONAdapter(DatasetAdapter):
             ref_dict["label"] = label
             if self.task == TaskType.SDT:
                 ref_dict["syndrome"] = _stringify(label)
+        # any extra field_map key (beyond the standard ones) becomes a reference
+        # field, e.g. `pathogenesis: "TCM Pathogenesis"` for the 证型链 metric.
+        for key, src in self.fm.items():
+            if key not in ("prompt", "rubric", "reference", "label", "options"):
+                val = self._resolve(src, root, item)
+                if val is not None:
+                    ref_dict[key] = _stringify(val)
 
         rid = root.get("id", root.get("prompt_id", ridx))
         sid = f"{self.id}:{rid}" + (f":{iidx}" if self.explode else "")

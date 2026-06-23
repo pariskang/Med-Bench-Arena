@@ -48,7 +48,7 @@ medeval/
 ├── schema.py                  # canonical types
 ├── providers/{base,hf,poe,litellm_provider,mock}.py
 ├── datasets/{base,hf_mcq,local_json,agent_env,tcmbench,medagentbench_grader}.py
-├── metrics/{base,mcq,llm_judge,text_match,prescription}.py
+├── metrics/{base,mcq,llm_judge,text_match,prescription,syndrome}.py
 ├── runner.py                  # orchestrator
 └── cli.py                     # python -m medeval run config.yaml
 ```
@@ -152,16 +152,20 @@ API. **Mode B** (production): serve HF with `vllm serve`, route everything
   (open_qa / **sdt 证型链** / **prescription 方剂** / **safety 安全**). Signed
   points are honored (HealthBench-style). Mark a model `judge_only: true` to use
   it as a judge without ranking it.
-- `f1` / `rouge` — token-overlap vs. a reference answer; **CJK-aware** tokenization
-  (char-level for Chinese, word-level for Latin, `jieba` if installed). ROUGE
-  reports 1/2/L.
+- `f1` / `rouge` / `bleu` — token-overlap vs. a reference answer; **CJK-aware**
+  tokenization (char-level for Chinese, word-level for Latin, `jieba` if installed).
+  ROUGE reports 1/2/L; BLEU is smoothed sentence-BLEU-4 (1..4 in detail).
 - `prescription_match` — **方剂结构匹配**: herb-set precision/recall/F1 (君臣佐使) +
   formula-name match + 治法 overlap, read from the structured gold (e.g. the
   MTCMB TCM-FRD `{治法, 方剂, 药物组成}` dict); herb names normalized (dosages
   stripped).
+- `syndrome_chain` — **证型链结构分** for 辨证: scores the 症状→病机→证型 chain with
+  **同病异治 partial credit** (multiple acceptable 证型 → recall-based credit);
+  reads `syndrome` / `pathogenesis` / `reference` from the gold.
 
 Multiple metrics per dataset are supported — e.g. TCMEval-SDT runs
-`[llm_judge, f1, rouge]` and MTCMB-FRD runs `[llm_judge, prescription_match]`.
+`[llm_judge, syndrome_chain, bleu, rouge]` and MTCMB-FRD runs
+`[llm_judge, prescription_match]`.
 
 ## Agents
 

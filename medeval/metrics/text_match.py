@@ -8,7 +8,9 @@ Chinese). These suit open_qa / sdt / prescription where a gold answer exists.
 """
 from __future__ import annotations
 
+import math
 import re
+from collections import Counter
 from typing import Any
 
 from ..schema import Prediction, Sample, Score
@@ -72,6 +74,25 @@ def _ngrams(tokens: list[str], n: int) -> list[tuple]:
     return [tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)]
 
 
+def sentence_bleu(pred: list[str], ref: list[str], max_n: int = 4) -> tuple[float, list[float]]:
+    """Sentence-level BLEU with brevity penalty and floor smoothing (so short
+    medical answers with no high-order n-gram match aren't flatly zero).
+    Returns (cumulative BLEU-max_n, [BLEU-1..BLEU-max_n])."""
+    if not pred or not ref:
+        return 0.0, [0.0] * max_n
+    bp = 1.0 if len(pred) > len(ref) else math.exp(1 - len(ref) / len(pred))
+    log_acc = 0.0
+    cumulative: list[float] = []
+    for n in range(1, max_n + 1):
+        pred_ng, ref_ng = Counter(_ngrams(pred, n)), Counter(_ngrams(ref, n))
+        total = max(sum(pred_ng.values()), 1)
+        clipped = sum(min(c, ref_ng[g]) for g, c in pred_ng.items())
+        p = clipped / total if clipped > 0 else 1e-9      # floor smoothing
+        log_acc += math.log(p)
+        cumulative.append(bp * math.exp(log_acc / n))
+    return cumulative[-1], cumulative
+
+
 def _reference_text(sample: Sample) -> str:
     ref = sample.reference
     return str(ref.get("reference") or ref.get("answer") or ref.get("syndrome") or "")
@@ -131,3 +152,30 @@ class Rouge(_RefMetric):
                 "rouge1": sum(s.detail["rouge1"] for s in scores) / n,
                 "rouge2": sum(s.detail["rouge2"] for s in scores) / n,
                 "n": len(scores)}
+
+
+@register_metric("bleu")
+class Bleu(_RefMetric):
+    """Smoothed sentence-BLEU vs. the reference answer (headline = cumulative
+    BLEU-4; BLEU-1..3 in detail). ``max_n`` is configurable."""
+
+    def __init__(self, config: dict[str, Any] | None = None):
+        super().__init__(config)
+        self.max_n = int(self.config.get("max_n", 4))
+
+    async def score(self, sample: Sample, pred: Prediction) -> Score:
+        ref_text = _reference_text(sample)
+        pt = tokenize(pred.text, self.mode)
+        rt = tokenize(ref_text, self.mode)
+        bleu, cumulative = sentence_bleu(pt, rt, self.max_n)
+        return Score(metric="bleu", value=bleu,
+                     detail={f"bleu{i+1}": v for i, v in enumerate(cumulative)}
+                     | {"has_reference": bool(ref_text)})
+
+    def aggregate(self, scores: list[Score]) -> dict[str, Any]:
+        n = len(scores) or 1
+        out = {"bleu": sum(s.value for s in scores) / n, "n": len(scores)}
+        for k in (f"bleu{i}" for i in range(1, self.max_n + 1)):
+            if scores and k in scores[0].detail:
+                out[k] = sum(s.detail[k] for s in scores) / n
+        return out

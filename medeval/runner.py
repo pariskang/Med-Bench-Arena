@@ -22,7 +22,7 @@ from .metrics.base import create_metric
 # Import implementation modules so their @register_* decorators run.
 from .providers import mock, litellm_provider, poe, hf  # noqa: F401
 from .datasets import hf_mcq, local_json, agent_env, tcmbench  # noqa: F401
-from .metrics import mcq, llm_judge, text_match, prescription  # noqa: F401
+from .metrics import mcq, llm_judge, text_match, prescription, syndrome  # noqa: F401
 
 
 def _safe(s: str) -> str:
