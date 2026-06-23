@@ -81,6 +81,7 @@ class LocalJSONAdapter(DatasetAdapter):
         self.system_prompt = config.get("system_prompt")
         self.image_base = config.get("image_base", "")
         self.image_zip = config.get("image_zip")   # auto download+unzip images archive
+        self.image_strip = config.get("image_strip", "")
         self.prompt_template = config.get("prompt_template")
         if not self.metrics:
             self.metrics = ["llm_judge"]
@@ -242,7 +243,8 @@ class LocalJSONAdapter(DatasetAdapter):
                 text = self.prompt_template.format(prompt=text)
             msgs.append(Message("user", text))
         # multimodal: attach images (open VQA) to the last user turn
-        imgs = encode_images(self._resolve(self.fm.get("image"), root, item), self.image_base)
+        imgs = encode_images(self._resolve(self.fm.get("image"), root, item),
+                             self.image_base, self.image_strip)
         if imgs:
             for m in reversed(msgs):
                 if m.role == "user":

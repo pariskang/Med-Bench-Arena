@@ -249,7 +249,9 @@ Configs live in `configs/catalog_en_med.yaml`, `catalog_multimodal.yaml`,
 | **MedFrameQA** ✅ | `SuhaoYu1020/MedFrameQA` parquet | `hf_mcq`, multi-image `image: [image_1..image_5]` (embedded HF Image), `correct_answer` letter. |
 | **SLAKE-en** ✅ | `mdwiratathya/SLAKE-vqa-english` parquet | `local_json` open VQA, embedded `image`, `llm_judge`. (Bilingual `BoKelvin/SLAKE` needs `imgs.zip`.) |
 | **TCM-Vision-Benchmark** ⚠️ | `FreedomIntelligence/TCM-Vision-Benchmark` JSON | `hf_mcq`, 7204 image MCQ (Tongue 768); `image` = path in `tcm_bench_images.zip` (775MB) → unzip, set `image_base`. |
-| OmniMedVQA / PMC-VQA / MedBookVQA ⚠️ | HF + images.zip (10.7/18.9/0.8 GB) | `hf_mcq`; download+unzip, set `image_base` (configs commented in `catalog_multimodal.yaml`). |
+| **OmniMedVQA** ✅ | `foreverbeliever/OmniMedVQA` (`OmniMedVQA.zip` 10.7GB) | `hf_mcq`, `image_zip` auto-fetch (zip holds images **and** QA JSONs); options `option_A..D`, `gt_answer` text. |
+| **PMC-VQA** ✅ | `RadGenome/PMC-VQA` (`images.zip` 18.9GB) | `hf_mcq`, `image_zip` auto-fetch; `Choice A..D`, `Answer_label` letter, `Figure_path`. |
+| **MedBookVQA** ✅ | `slyipae1/MedBookVQA` (`figures.zip` 839MB, CC-BY-NC) | `hf_mcq`, `image_zip` auto-fetch; options `[Answer, Distractors]` (flattened) + `shuffle_options`, `image_strip: "../"`. |
 | GMAI-MMBench 🔒 | `OpenGVLab/GMAI-MMBench` (gated) | VLMEvalKit TSV; `image` is a base64 string (`encode_images` auto-detects). Use `*_VAL.tsv`. |
 
 ### Chinese-med / TCM extensions

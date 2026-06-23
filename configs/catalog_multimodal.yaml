@@ -70,13 +70,32 @@ datasets:
     image_base: ./data/pmc_images/
     metrics: [mcq_accuracy]
 
-  # OmniMedVQA (10.7GB OmniMedVQA.zip; QA JSONs live INSIDE the zip — image_zip
-  # extracts them too, then data_files reads the extracted globs):
-  # - {id: omnimedvqa, adapter: hf_mcq, format: json,
-  #    image_zip: https://huggingface.co/datasets/foreverbeliever/OmniMedVQA/resolve/main/OmniMedVQA.zip,
-  #    image_base: ./data/omnimedvqa/, data_files: ./data/omnimedvqa/OmniMedVQA/QA_information/Open-access/*.json,
-  #    field_map: {question: question, options: [option_A,option_B,option_C,option_D], answer: gt_answer, image: image_path}, answer_format: text}
-  # MedBookVQA (figures.zip 839MB, CC-BY-NC): data.json; options assembled from Answer+Distractors.
+  - id: omnimedvqa              # 127k QA / 118k images / 12 modalities; closed MCQ
+    adapter: hf_mcq
+    format: json
+    # OmniMedVQA.zip (10.7GB) bundles BOTH the images AND the QA JSONs; image_zip
+    # extracts everything, then data_files reads the extracted Open-access globs.
+    image_zip: https://huggingface.co/datasets/foreverbeliever/OmniMedVQA/resolve/main/OmniMedVQA.zip
+    image_base: ./data/omnimedvqa/
+    data_files: ./data/omnimedvqa/QA_information/Open-access/*.json
+    split: train
+    field_map: {question: question, options: [option_A, option_B, option_C, option_D],
+                answer: gt_answer, image: image_path}
+    answer_format: text          # gt_answer is the full option text; image_path = Images/...
+    metrics: [mcq_accuracy]
+
+  - id: medbookvqa              # 5000 textbook-figure MCQ; options = Answer + Distractors
+    adapter: hf_mcq
+    format: json
+    data_files: https://huggingface.co/datasets/slyipae1/MedBookVQA/resolve/main/data.json
+    split: train
+    image_zip: https://huggingface.co/datasets/slyipae1/MedBookVQA/resolve/main/figures.zip
+    image_base: ./data/medbookvqa/
+    image_strip: "../"           # image_path is ../figures/<id>.jpg
+    field_map: {question: Question, options: [Answer, Distractors], answer: Answer, image: image_path}
+    answer_format: text
+    shuffle_options: true        # Answer is always first in the assembled list -> de-bias
+    metrics: [mcq_accuracy]       # CC-BY-NC-4.0 (non-commercial)
 
   # ===== (C) gated =====
   # GMAI-MMBench (OpenGVLab/GMAI-MMBench, gated): VLMEvalKit TSV; image col is a base64

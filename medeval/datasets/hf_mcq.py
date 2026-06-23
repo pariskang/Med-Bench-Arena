@@ -74,6 +74,7 @@ class HFMCQAdapter(DatasetAdapter):
         self.image_base = config.get("image_base", "")
         # auto-download + unzip an images.zip and use its dir as image_base
         self.image_zip = config.get("image_zip")
+        self.image_strip = config.get("image_strip", "")   # drop a path prefix (e.g. "../")
         # constant question when the data has no question column (e.g. an
         # image-classification set: TCM-Ladder visual = image + category label)
         self.question_text = config.get("question_text", "")
@@ -127,9 +128,15 @@ class HFMCQAdapter(DatasetAdapter):
         opt = self.fm.get("options")
         if opt is None and self.inject_options:
             return list(self.inject_options), []
-        if isinstance(opt, list):  # N separate columns
-            vals = ["" if row.get(c) is None else str(row[c]) for c in opt]
-            while len(vals) > 2 and not vals[-1].strip():  # drop trailing empty slots (e.g. blank E)
+        if isinstance(opt, list):  # N columns; list-valued cols are flattened
+            vals: list[str] = []                 # (e.g. MedBookVQA [Answer, Distractors])
+            for c in opt:
+                v = row.get(c)
+                if isinstance(v, (list, tuple)):
+                    vals.extend("" if x is None else str(x) for x in v)
+                else:
+                    vals.append("" if v is None else str(v))
+            while len(vals) > 2 and not vals[-1].strip():  # drop trailing empty slots (blank E)
                 vals.pop()
             return vals, []
         val = row[opt]
@@ -302,7 +309,7 @@ class HFMCQAdapter(DatasetAdapter):
 
     def _encode_image(self, val: Any) -> list[str]:
         from ..schema import encode_images
-        return encode_images(val, self.image_base)
+        return encode_images(val, self.image_base, self.image_strip)
 
     def _render(self, question: str, choices: list[str], context: str) -> str:
         opt_block = "\n".join(f"{LETTERS[i]}. {c}" for i, c in enumerate(choices))

@@ -38,11 +38,13 @@ def image_to_url(img: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def encode_images(val: Any, base: str = "") -> list[str]:
+def encode_images(val: Any, base: str = "", strip: str = "") -> list[str]:
     """Normalize many image representations to a list of URL/data-URI strings.
 
-    Handles: str (URL/path, ``base`` prepended to relative), HF Image dict
-    ``{bytes|path|url}``, raw ``bytes`` (parquet binary), nested lists, and PIL.
+    Handles: str (URL/path, ``base`` prepended to relative, ``strip`` prefix removed),
+    HF Image dict ``{bytes|path|url}``, raw ``bytes`` (parquet binary), nested lists,
+    PIL, and a bare base64 string. ``strip`` removes a leading path prefix such as
+    ``"../"`` (e.g. MedBookVQA's ``../figures/x.jpg``) before prepending ``base``.
     """
     if val is None:
         return []
@@ -58,20 +60,24 @@ def encode_images(val: Any, base: str = "") -> list[str]:
         # charset (paths/text have ./-/_ or spaces and break the match)
         if len(val) > 256 and re.fullmatch(r"[A-Za-z0-9+/=\s]+", val):
             return [f"data:image/jpeg;base64,{val.strip()}"]
+        if strip and val.startswith(strip):
+            val = val[len(strip):]
         return [base + val]
     if isinstance(val, dict):  # HF Image feature
         if val.get("url"):
             return [val["url"]]
         if val.get("path"):
             p = val["path"]
+            if strip and p.startswith(strip):
+                p = p[len(strip):]
             return [(base if not p.startswith(("http", "data:")) else "") + p]
         if val.get("bytes"):
-            return encode_images(val["bytes"], base)
+            return encode_images(val["bytes"], base, strip)
         return []
     if isinstance(val, (list, tuple)):
         out: list[str] = []
         for v in val:
-            out.extend(encode_images(v, base))
+            out.extend(encode_images(v, base, strip))
         return out
     try:  # PIL.Image
         import io
