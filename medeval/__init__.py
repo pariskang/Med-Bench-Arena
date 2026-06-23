@@ -16,6 +16,7 @@ from .metrics.base import available_metrics, create_metric, register_metric
 from .submit import export, to_opencompass, to_medbench
 from .distributed import merge_results, run_pool, run_ray, submit_slurm
 from .kg import build_classics_kg, export_kg, get_kg, load_kg
+from .assets import ensure_extracted, ensure_image_base
 
 __version__ = "0.1.0"
 
@@ -28,5 +29,6 @@ __all__ = [
     "export", "to_opencompass", "to_medbench",
     "merge_results", "run_pool", "run_ray", "submit_slurm",
     "build_classics_kg", "export_kg", "get_kg", "load_kg",
+    "ensure_extracted", "ensure_image_base",
     "__version__",
 ]

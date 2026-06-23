@@ -43,11 +43,12 @@ datasets:
     data_files: https://huggingface.co/datasets/FreedomIntelligence/TCM-Vision-Benchmark/resolve/main/TCM-Vision_Benchmark.json
     field_map: {question: question, options: options, answer: answer_idx, image: image}
     answer_format: letter
-    image_base: ./data/tcm_vision/   # download+unzip tcm_bench_images.zip (775MB) here first
+    image_zip: https://huggingface.co/datasets/FreedomIntelligence/TCM-Vision-Benchmark/resolve/main/tcm_bench_images.zip
+    image_base: ./data/tcm_vision/   # auto-downloaded + unzipped here (775MB) on first run
     metrics: [mcq_accuracy]
     # TCM-Ladder visual (tongue/herb, raw bytes) -> see configs/example_tcm_ladder.yaml
 
-  # ===== (B) needs images.zip — set image_base to the unzip dir =====
+  # ===== (B) needs images.zip — auto-downloaded+unzipped via image_zip =====
   - id: medxpertqa_mm            # MedXpertQA multimodal subset (2000), images.zip 517MB
     adapter: hf_mcq
     path: TsinghuaC3I/MedXpertQA
@@ -55,20 +56,27 @@ datasets:
     split: test
     field_map: {question: question, options: options, answer: label, image: images}
     answer_format: letter
-    image_base: ./data/medxpertqa_images/   # unzip images.zip; 'images' is a list of filenames
+    image_zip: https://huggingface.co/datasets/TsinghuaC3I/MedXpertQA/resolve/main/images.zip
+    image_base: ./data/medxpertqa_images/   # auto-fetched; 'images' is a list of filenames
     metrics: [mcq_accuracy]
 
-  # OmniMedVQA (10.7GB OmniMedVQA.zip; QA JSONs inside it):
+  - id: pmc_vqa                  # RadGenome/PMC-VQA; images.zip 18.9GB (v1) auto-fetched
+    adapter: hf_mcq
+    format: csv
+    data_files: https://huggingface.co/datasets/RadGenome/PMC-VQA/resolve/main/test_clean.csv
+    field_map: {question: Question, options: ["Choice A", "Choice B", "Choice C", "Choice D"], answer: Answer_label, image: Figure_path}
+    answer_format: letter
+    image_zip: https://huggingface.co/datasets/RadGenome/PMC-VQA/resolve/main/images.zip
+    image_base: ./data/pmc_images/
+    metrics: [mcq_accuracy]
+
+  # OmniMedVQA (10.7GB OmniMedVQA.zip; QA JSONs live INSIDE the zip — image_zip
+  # extracts them too, then data_files reads the extracted globs):
   # - {id: omnimedvqa, adapter: hf_mcq, format: json,
-  #    data_files: ./OmniMedVQA/QA_information/Open-access/*.json,
-  #    field_map: {question: question, options: [option_A,option_B,option_C,option_D], answer: gt_answer, image: image_path},
-  #    answer_format: text, image_base: ./OmniMedVQA/}
-  # PMC-VQA (RadGenome/PMC-VQA; images.zip 18.9GB):
-  # - {id: pmc_vqa, adapter: hf_mcq, format: csv,
-  #    data_files: https://huggingface.co/datasets/RadGenome/PMC-VQA/resolve/main/test_clean.csv,
-  #    field_map: {question: Question, options: ["Choice A","Choice B","Choice C","Choice D"], answer: Answer_label, image: Figure_path},
-  #    answer_format: letter, image_base: ./pmc_images/}
-  # MedBookVQA (figures.zip 839MB, CC-BY-NC): data.json -> options assembled from Answer+Distractors.
+  #    image_zip: https://huggingface.co/datasets/foreverbeliever/OmniMedVQA/resolve/main/OmniMedVQA.zip,
+  #    image_base: ./data/omnimedvqa/, data_files: ./data/omnimedvqa/OmniMedVQA/QA_information/Open-access/*.json,
+  #    field_map: {question: question, options: [option_A,option_B,option_C,option_D], answer: gt_answer, image: image_path}, answer_format: text}
+  # MedBookVQA (figures.zip 839MB, CC-BY-NC): data.json; options assembled from Answer+Distractors.
 
   # ===== (C) gated =====
   # GMAI-MMBench (OpenGVLab/GMAI-MMBench, gated): VLMEvalKit TSV; image col is a base64

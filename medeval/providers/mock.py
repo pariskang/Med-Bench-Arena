@@ -72,6 +72,11 @@ class MockProvider(ModelProvider):
         if "diagnosis" in low and "doctor" in low:
             return self._agent(prompt)
         letters = sorted(set(_LETTER_LINE.findall(prompt)))
+        # MediQ interactive: ask one question, then commit to a lettered answer
+        if "answer: <letter>" in low and letters:
+            if low.count("please tell me") < 1:   # count our own prior questions in the history
+                return "Please tell me the main symptoms, history, and any key findings."
+            return f"ANSWER: {letters[_hash_int(prompt) % len(letters)]}"
         if letters and ("correct option" in low or "letter" in low or "answer with" in low):
             pick = letters[_hash_int(prompt) % len(letters)]
             return f"The answer is {pick}."

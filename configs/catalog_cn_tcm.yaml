@@ -60,6 +60,3 @@ datasets:
   # Flatten to an array (see DATASETS.md one-liner) then:
   # - {id: tcm_text_exams, adapter: hf_mcq, format: json, data_files: ./data/tcm_text_flat.json,
   #    field_map: {question: question, options: options, answer: answer_idx}, answer_format: multi}
-
-  # ---- not released yet (pipelines / demo only): ZhongJing-TCM-Benchmark, ZhongJing-OMNI.
-  #      See DATASETS.md; schemas captured for when data appears.

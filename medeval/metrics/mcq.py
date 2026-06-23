@@ -57,11 +57,15 @@ class PassK(Metric):
         pass_pow_k = 1.0 if k > 0 and all(successes) else 0.0
         pass_at_1 = 1.0 if successes and successes[0] else 0.0
         frac = (sum(successes) / k) if k else 0.0
+        turns = [r.get("turns", 0) for r in rollouts]
+        timed_out = any(r.get("info", {}).get("timeout") for r in rollouts)
         return Score(
             metric="pass_k",
             value=pass_pow_k,
             detail={"k": k, "pass^k": pass_pow_k, "pass@1": pass_at_1,
-                    "success_fraction": frac, "successes": successes},
+                    "success_fraction": frac, "successes": successes,
+                    "mean_turns": (sum(turns) / len(turns)) if turns else 0.0,
+                    "timeout": timed_out},
         )
 
     def aggregate(self, scores: list[Score]) -> dict[str, Any]:
@@ -72,5 +76,7 @@ class PassK(Metric):
             "pass^k": sum(s.detail["pass^k"] for s in scores) / n,
             "pass@1": sum(s.detail["pass@1"] for s in scores) / n,
             "mean_success_fraction": sum(s.detail["success_fraction"] for s in scores) / n,
+            "avg_turns": sum(s.detail.get("mean_turns", 0.0) for s in scores) / n,
+            "timeout_rate": sum(1 for s in scores if s.detail.get("timeout")) / n,
             "n": n,
         }

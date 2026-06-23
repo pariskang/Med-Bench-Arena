@@ -53,7 +53,8 @@ medeval/
 ├── runner.py                  # orchestrator
 ├── submit.py                  # OpenCompass / MedBench submission export
 ├── distributed.py             # sharding · merge · local/Ray/Slurm launchers
-└── cli.py                     # python -m medeval run|list|export|merge|pool|slurm|kg
+├── assets.py                  # auto download + unzip images.zip (fetch helper)
+└── cli.py                     # python -m medeval run|list|export|merge|pool|slurm|kg|fetch
 ```
 
 ---
@@ -191,7 +192,11 @@ Multiple metrics per dataset are supported — e.g. TCMEval-SDT runs
 The doctor agent runs the same `ModelProvider` policy inside an
 `AgentEnvironment(reset/step)` loop. **AgentClinic** is wired and runs **offline**
 (patient / measurement / moderator default to rule-based from the scenario; pass
-`support:` to use LLM agents).
+`support:` to use LLM agents). **MediQ** (`adapter: mediq`) is an interactive
+proactive-questioning environment: the doctor asks the patient for atomic facts
+(revealed only on a relevant question) or commits with `ANSWER: <letter>`; scored
+with `pass_k` (pass@1 = accuracy; aggregate adds `avg_turns` / `timeout_rate`).
+The patient is scripted (most-relevant fact) offline, or an LLM via `support:`.
 
 **MedAgentBench** is fully wired to a **real FHIR server**: the agent emits
 `GET <url>` / `POST <url>\n<json>` / `FINISH([...])` (faithful to the upstream
@@ -220,6 +225,11 @@ constant prompt for image-classification sets without a question column.
 `configs/example_tcm_ladder.yaml`: the 12,778-item bilingual text MCQ set works
 as-is, and the tongue/herb `visual.parquet` (raw JPEG bytes) drives the
 bytes→data-URL→vision pipeline. Pair image 舌象 tasks with the `tongue_pulse` metric.
+
+For sets whose images ship as a separate `images.zip` (OmniMedVQA, PMC-VQA,
+MedXpertQA-MM, TCM-Vision-Benchmark, …), set `image_zip:` (the archive URL) and
+`image_base:` — the adapter **auto-downloads + unzips** it once on first run
+(idempotent). Pre-fetch with `python -m medeval fetch <url> --out <dir>`.
 
 ## Knowledge graph (古籍本体)
 

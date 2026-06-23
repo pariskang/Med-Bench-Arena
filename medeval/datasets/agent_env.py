@@ -509,3 +509,131 @@ class MedAgentBenchAdapter(AgentAdapter):
         grader = (support or {}).get("grader")
         return MedAgentBenchEnv(sample.env_spec, self.fhir_base, max_rounds=self.max_turns,
                                 funcs=self._funcs or [], grader=grader, refsol=self._refsol)
+
+
+# ===========================================================================
+# 4) MediQ — interactive information-seeking clinical reasoning
+# ===========================================================================
+def _mediq_words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+|[一-鿿]", (text or "").lower()))
+
+
+class MediQEnv(AgentEnvironment):
+    """One MediQ episode (Li et al. 2024). The doctor starts information-starved and
+    each turn either ASKS the patient a question (an atomic fact is revealed, the most
+    relevant one) or COMMITS with 'ANSWER: <letter>'. Faithful to the proactive
+    question-asking protocol; scored by final-answer accuracy + #questions + timeout."""
+
+    def __init__(self, scenario: dict[str, Any], max_questions: int = 15,
+                 support: Optional[dict] = None):
+        self.s = scenario
+        self.options = scenario.get("options", {}) or {}
+        self.gold = str(scenario.get("answer_idx", "")).strip().upper()[:1]
+        facts = scenario.get("facts") or scenario.get("atomic_facts") or []
+        self.unrevealed = [str(f) for f in facts]
+        ctx = scenario.get("context") or []
+        self.initial = (ctx[0] if isinstance(ctx, list) and ctx else
+                        (str(ctx) if ctx else "A patient presents for evaluation."))
+        self.max_questions = max_questions
+        self.support = support or {}
+        self.questions = 0
+
+    def doctor_instructions(self) -> str:
+        opts = "\n".join(f"{k}. {v}" for k, v in sorted(self.options.items()))
+        return (
+            "You are a physician with limited initial information. Each turn, either ASK the "
+            "patient ONE question to gather more information, or COMMIT to a final choice "
+            "with 'ANSWER: <letter>'. Only ask what you need.\n"
+            f"Question: {self.s.get('question', '')}\n{opts}\n"
+            f"You may ask at most {self.max_questions} questions before you must answer."
+        )
+
+    async def reset(self) -> str:
+        return f"Initial information: {self.initial}\nAsk a question, or commit with 'ANSWER: <letter>'."
+
+    async def step(self, action: str):
+        letter = self._commit_letter(action)
+        if letter:
+            ok = letter == self.gold
+            return ("", 1.0 if ok else 0.0, True,
+                    {"success": ok, "answered": True, "questions": self.questions, "choice": letter})
+        self.questions += 1
+        if self.questions >= self.max_questions:  # forced final answer
+            guess = self._any_letter(action)
+            ok = bool(guess) and guess == self.gold
+            return ("", 1.0 if ok else 0.0, True,
+                    {"success": ok, "timeout": True, "questions": self.questions})
+        obs = await self._patient(action)
+        return (obs, 0.0, False, {})
+
+    async def _patient(self, question: str) -> str:
+        prov = self.support.get("patient")
+        if prov is not None and self.unrevealed:
+            sys = ("You are the patient. Reveal ONLY the single most relevant fact that answers "
+                   "the doctor's question, drawn from these facts: " + " | ".join(self.unrevealed) +
+                   ". If none apply, say you don't have that information.")
+            g = await prov.agenerate([Message("system", sys), Message("user", question)],
+                                     temperature=0.0, max_tokens=80)
+            return g.text
+        return self._reveal(question)
+
+    def _reveal(self, question: str) -> str:
+        if not self.unrevealed:
+            return "I don't have any further information about that."
+        q = _mediq_words(question)
+        best, best_score = self.unrevealed[0], 0
+        for f in self.unrevealed:
+            sc = len(q & _mediq_words(f))
+            if sc > best_score:
+                best, best_score = f, sc
+        self.unrevealed.remove(best)
+        return best
+
+    @staticmethod
+    def _commit_letter(action: str) -> str | None:
+        m = re.search(r"(?:ANSWER|FINAL ANSWER|DIAGNOSIS|答案)\s*[:：]?\s*\(?([A-E])\)?",
+                      action or "", re.IGNORECASE)
+        if m:
+            return m.group(1).upper()
+        m2 = re.search(r"\b(?:the answer is|answer is)\s*\(?([A-E])\)?", action or "", re.IGNORECASE)
+        return m2.group(1).upper() if m2 else None
+
+    @staticmethod
+    def _any_letter(action: str) -> str | None:
+        m = re.search(r"(?<![A-Za-z])([A-E])(?![A-Za-z])", action or "")
+        return m.group(1).upper() if m else None
+
+
+@register_dataset("mediq")
+class MediQAdapter(AgentAdapter):
+    """config:
+      source_url:  MediQ jsonl (default all_dev_good.jsonl)
+      max_questions: question budget per episode (default 15)
+      support:     {patient: <model_id>}  optional LLM patient; else scripted (offline)
+    Scored with pass_k (pass@1 = accuracy; aggregate also reports avg_turns / timeout_rate)."""
+
+    DEFAULT_URL = "https://raw.githubusercontent.com/stellalisy/MediQ/main/data/all_dev_good.jsonl"
+
+    def __init__(self, config: dict[str, Any]):
+        super().__init__(config)
+        self.source_url = config.get("source_url", self.DEFAULT_URL)
+        self.max_questions = int(config.get("max_questions", config.get("max_turns", 15)))
+        self.max_turns = self.max_questions + 1
+        self.support_spec = config.get("support", {})
+
+    def load(self) -> list[Sample]:
+        h = hashlib.sha256(self.source_url.encode()).hexdigest()[:16]
+        fp = _download(self.source_url, CACHE_DIR / f"{self.id}_{h}.jsonl")
+        out = []
+        for i, line in enumerate(fp.read_text(encoding="utf-8").splitlines()):
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            out.append(Sample(id=f"{self.id}:{rec.get('id', i)}", task_type=TaskType.AGENT,
+                              messages=[], env_spec=rec))
+            if self.limit and len(out) >= self.limit:
+                break
+        return out
+
+    def make_env(self, sample: Sample, support=None) -> AgentEnvironment:
+        return MediQEnv(sample.env_spec, max_questions=self.max_questions, support=support)

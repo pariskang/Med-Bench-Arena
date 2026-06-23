@@ -94,7 +94,14 @@ datasets:
     field_map: {question: question, options: options, answer: answer_idx, context: context}
     answer_format: letter
     metrics: [mcq_accuracy]
-    # interactive proactive-questioning form needs a MediQ AgentAdapter (Expert<->Patient loop).
+
+  - id: mediq_interactive        # proactive question-asking: facts revealed only when asked
+    adapter: mediq
+    source_url: https://raw.githubusercontent.com/stellalisy/MediQ/main/data/all_dev_good.jsonl
+    max_questions: 15
+    k: 1                         # pass@1 = answer accuracy; also reports avg_turns / timeout_rate
+    metrics: [pass_k]
+    # patient is scripted (most-relevant fact) offline; add support: {patient: <model_id>} for an LLM patient
 
   # ---- needs a one-time prep step (documented in DATASETS.md) ----
   # MedXpertQA MM: same repo, name: MM, + field_map.image: images, image_base: <unzip images.zip>.

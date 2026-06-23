@@ -72,6 +72,8 @@ class HFMCQAdapter(DatasetAdapter):
         # multimodal: field_map.image may name a column (or list) of images;
         # image_base is prepended to relative paths/URLs.
         self.image_base = config.get("image_base", "")
+        # auto-download + unzip an images.zip and use its dir as image_base
+        self.image_zip = config.get("image_zip")
         # constant question when the data has no question column (e.g. an
         # image-classification set: TCM-Ladder visual = image + category label)
         self.question_text = config.get("question_text", "")
@@ -82,6 +84,9 @@ class HFMCQAdapter(DatasetAdapter):
     def load(self) -> list[Sample]:
         from datasets import load_dataset  # lazy
 
+        if self.image_zip:  # fetch + unzip the images archive once
+            from ..assets import ensure_image_base
+            self.image_base = ensure_image_base(self.image_zip, self.image_base or None)
         samples: list[Sample] = []
         if self.data_files:  # raw-file mode (json/csv/parquet): single -> "train"
             ds = load_dataset(self.format, data_files=self.data_files,

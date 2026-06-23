@@ -241,7 +241,7 @@ Configs live in `configs/catalog_en_med.yaml`, `catalog_multimodal.yaml`,
 | **MedHallu** ✅ | `UTAustin-AIHealth/MedHallu` `pqa_labeled`/`pqa_artificial` | `hf_mcq`, 2-col options `[Ground Truth, Hallucinated Answer]`, gold = `Hallucinated Answer`, `answer_format: text`, `shuffle_options: true` (de-bias). |
 | **Med-HALT** ⚠️ | `openlifescienceai/Med-HALT` | `reasoning_nota` → `hf_mcq` (`options` is a stringified dict, auto-parsed; `correct_index`). FCT (yes/no), fake (judge), IR_* (gen) need prep/judge. |
 | **MLEC-QA** ✅ | `shuyuej/MLEC-QA-Benchmark` (new HF mirror, test) | `hf_mcq`, dict options A–E, gold `answer` letter. (Full 5-subset set still Google-Drive.) |
-| **MediQ** ✅ | `stellalisy/MediQ` `all_dev_good.jsonl` | `hf_mcq` single-turn upper-bound (`answer_idx`, `context` list). Interactive form needs a MediQ AgentAdapter. |
+| **MediQ** ✅ | `stellalisy/MediQ` `all_dev_good.jsonl` | `hf_mcq` single-turn upper-bound, **or** `adapter: mediq` (interactive proactive-questioning: facts revealed on relevant questions; `pass_k` → accuracy + avg_turns + timeout_rate). |
 
 ### Multimodal VQA
 | Dataset | Access | Adapter / notes |
@@ -259,8 +259,6 @@ Configs live in `configs/catalog_en_med.yaml`, `catalog_multimodal.yaml`,
 | **TCM-BEST4SDT** ✅ | `DYJG-research/TCM-BEST4SDT` raw JSON | MCQ (3 files, `option` dict, multi) → `hf_mcq`; SDT (300, open) → `local_json`+`llm_judge`/`syndrome_chain`. |
 | **TCMEval-PA** ⚠️ | Figshare `.xlsx` (`ndownloader.figshare.com/files/56581880`) | 处方审核 MCQ; convert xlsx→json, `options_inline: true`, `answer_format: multi`. (≠ TCMEval-SDT.) |
 | **TCM-Text-Exams** ⚠️ | `FreedomIntelligence/TCM-Text-Exams` JSON | `hf_mcq` after flattening the dict-of-5-sections to an array (`load_dataset("json")` errors on the dict). |
-| **ZhongJing-TCM-Benchmark** 🔒 | `pariskang/ZhongJing-TCM-Benchmark` | Generation **pipeline only** — `data/final/*.jsonl` 404; run it to produce data (schema in `src/schemas.py`). |
-| **ZhongJing-OMNI** 🔒 | `CMLM/ZhongJing-OMNI` | **Data not released** (only `demo.png`); described CSVs 404. Use TCM-Vision-Benchmark / TCM-Ladder for live TCM 多模态. |
 
 Prep one-liners: **TCM-Text-Exams** `json.dump([{**r,"section":s} for s,recs in d.items() for r in recs], ...)`; **TCMEval-PA** `openpyxl` → rows → json; both then load via `hf_mcq` `data_files`.
 

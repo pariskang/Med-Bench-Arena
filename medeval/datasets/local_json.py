@@ -80,6 +80,7 @@ class LocalJSONAdapter(DatasetAdapter):
         self.fm = dict(config.get("field_map", {}))
         self.system_prompt = config.get("system_prompt")
         self.image_base = config.get("image_base", "")
+        self.image_zip = config.get("image_zip")   # auto download+unzip images archive
         self.prompt_template = config.get("prompt_template")
         if not self.metrics:
             self.metrics = ["llm_judge"]
@@ -148,6 +149,9 @@ class LocalJSONAdapter(DatasetAdapter):
 
     # --- loading ----------------------------------------------------------
     def load(self) -> list[Sample]:
+        if self.image_zip:
+            from ..assets import ensure_image_base
+            self.image_base = ensure_image_base(self.image_zip, self.image_base or None)
         records = self._read_records(self._resolve_file())
         samples: list[Sample] = []
         for ridx, root in enumerate(records):

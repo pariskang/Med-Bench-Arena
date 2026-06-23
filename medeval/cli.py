@@ -60,6 +60,13 @@ def cmd_pool(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch(args: argparse.Namespace) -> int:
+    from .assets import ensure_extracted
+    dest = ensure_extracted(args.url, args.output)
+    print(f"[medeval] assets ready at {dest}")
+    return 0
+
+
 def cmd_kg(args: argparse.Namespace) -> int:
     from .kg.tcm_classics import build_classics_kg, export_kg
     kg = build_classics_kg()
@@ -143,6 +150,11 @@ def main(argv: list[str] | None = None) -> int:
     p_pool.add_argument("--limit", type=int, default=None, help="cap samples per dataset")
     p_pool.add_argument("--no-cache", action="store_true")
     p_pool.set_defaults(func=cmd_pool)
+
+    p_fetch = sub.add_parser("fetch", help="download + unzip a dataset asset (e.g. images.zip)")
+    p_fetch.add_argument("url", help="archive URL (or local path)")
+    p_fetch.add_argument("--output", "--out", dest="output", required=True, help="extract-to dir")
+    p_fetch.set_defaults(func=cmd_fetch)
 
     p_kg = sub.add_parser("kg", help="build + export the TCM classics knowledge graph")
     p_kg.add_argument("--output", "--out", dest="output", default="data/kg")
