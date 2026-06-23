@@ -51,7 +51,8 @@ medeval/
 ├── metrics/{base,mcq,llm_judge,text_match,prescription,syndrome}.py
 ├── runner.py                  # orchestrator
 ├── submit.py                  # OpenCompass / MedBench submission export
-└── cli.py                     # python -m medeval run|export|list
+├── distributed.py             # strided sharding · merge · local pool launcher
+└── cli.py                     # python -m medeval run|list|export|merge|pool
 ```
 
 ---
@@ -190,6 +191,28 @@ curl http://localhost:8080/fhir/metadata                 # verify
 python -m medeval run configs/example_medagentbench.yaml --limit 10
 ```
 
+## Distributed scheduling
+
+The grid is embarrassingly parallel, so MedEval distributes by **strided
+sharding** — each worker runs `samples[i::N]` and writes its own shard-scoped
+detail + cache files, so workers never collide and each is independently
+resumable. No central server.
+
+```bash
+# one box, N workers (optionally one per GPU for data-parallel HF/vLLM):
+python -m medeval pool configs/catalog_mcq.yaml --num-shards 4 --gpus 0,1,2,3
+
+# many machines (shared filesystem): run a shard on each, then merge once:
+python -m medeval run cfg.yaml --shard 0 --num-shards 8 --output /shared/run   # machine 0
+python -m medeval run cfg.yaml --shard 1 --num-shards 8 --output /shared/run   # machine 1
+# ...
+python -m medeval merge /shared/run        # -> leaderboard.json + leaderboard.md
+```
+
+`merge` **re-aggregates the per-sample scores** from every shard (not a
+mean-of-means), so the result is identical to a single full run even when shards
+have unequal sizes. Programmatic: `medeval.run_pool(...)` / `medeval.merge_results(...)`.
+
 ## Leaderboard submission (MedBench / OpenCompass)
 
 Export a run's predictions into an upload-ready format:
@@ -238,5 +261,6 @@ in YAML.
 
 Metrics include F1 / ROUGE / BLEU / 方剂结构匹配 / 证型链结构分; MedAgentBench is
 wired to a live FHIR server (built-in grader, official `refsol.py` pluggable);
-results export to OpenCompass / MedBench submission formats. Further extension
-points: distributed scheduling and more structured metrics.
+results export to OpenCompass / MedBench submission formats; runs distribute via
+strided sharding + merge (`pool` / `merge`). Further extension points: more
+structured metrics and a Ray/Slurm scheduler backend.

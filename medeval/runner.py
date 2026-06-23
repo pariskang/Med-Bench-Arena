@@ -45,6 +45,41 @@ def _gen_from_dict(d: dict[str, Any]) -> Generation:
                       finish_reason=d.get("finish_reason", ""))
 
 
+def headline(agg: dict[str, Any]) -> tuple[str, float]:
+    """Pick the salient (name, value) from a metric aggregation for ranking."""
+    for metric, d in agg.items():
+        for key in ("accuracy", "judge_score", "pass^k", "chain_score", "herb_f1"):
+            if key in d:
+                return key, d[key]
+    for metric, d in agg.items():
+        for k, v in d.items():
+            if isinstance(v, (int, float)) and k != "n":
+                return f"{metric}.{k}", v
+    return "score", 0.0
+
+
+def write_leaderboard(rows: list[dict[str, Any]], output_dir: Path) -> None:
+    """Write leaderboard.json + leaderboard.md for a set of result rows."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "leaderboard.json").write_text(
+        json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    by_ds: dict[str, list] = {}
+    for r in rows:
+        by_ds.setdefault(r["dataset"], []).append(r)
+    lines = ["# MedEval Leaderboard", ""]
+    for dsid, rs in by_ds.items():
+        lines += [f"## {dsid}", "",
+                  "| Model | Score | Metric | n | Cost (USD) |",
+                  "|---|---|---|---|---|"]
+        ranked = sorted(rs, key=lambda r: headline(r["metrics"])[1], reverse=True)
+        for r in ranked:
+            key, val = headline(r["metrics"])
+            lines.append(
+                f"| {r['model']} | {val:.4f} | {key} | {r['n']} | {r.get('model_cost_usd', 0.0):.4f} |")
+        lines.append("")
+    (output_dir / "leaderboard.md").write_text("\n".join(lines), encoding="utf-8")
+
+
 class Runner:
     def __init__(self, config: dict[str, Any]):
         self.cfg = config
@@ -52,6 +87,11 @@ class Runner:
         self.output_dir = Path(run.get("output_dir", "./results"))
         self.concurrency = int(run.get("concurrency", 16))
         self.cache = bool(run.get("cache", True))
+        # distributed sharding: this worker handles samples[shard_index::num_shards]
+        self.num_shards = max(1, int(run.get("num_shards", 1) or 1))
+        self.shard_index = int(run.get("shard_index", 0) or 0)
+        self.sharded = self.num_shards > 1
+        self.shard_suffix = f"__shard{self.shard_index}of{self.num_shards}" if self.sharded else ""
         self.eval_cfg = config.get("eval", {})
         self.gen_defaults: dict[str, Any] = dict(
             self.eval_cfg.get("gen", {"temperature": 0.0, "max_tokens": 1024}))
@@ -87,7 +127,7 @@ class Runner:
         sig = json.dumps({"gen": self.gen_defaults, "model": getattr(prov, "model", prov.id)},
                          sort_keys=True)
         h = abs(hash(sig)) % (10 ** 10)
-        return self.cache_dir / f"{_safe(ds.id)}__{_safe(prov.id)}__{h}.jsonl"
+        return self.cache_dir / f"{_safe(ds.id)}__{_safe(prov.id)}__{h}{self.shard_suffix}.jsonl"
 
     def _load_cache(self, path: Path) -> dict[str, Prediction]:
         out: dict[str, Prediction] = {}
@@ -182,7 +222,7 @@ class Runner:
 
     # --- output -----------------------------------------------------------
     def _write_detail(self, prov, ds, samples, preds, scores_by_metric) -> None:
-        path = self.output_dir / f"detail__{_safe(prov.id)}__{_safe(ds.id)}.jsonl"
+        path = self.output_dir / f"detail__{_safe(prov.id)}__{_safe(ds.id)}{self.shard_suffix}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             for i, s in enumerate(samples):
@@ -195,6 +235,9 @@ class Runner:
                     "prediction": p.generation.text[:2000],
                     "parsed": p.parsed if not isinstance(p.parsed, set) else list(p.parsed),
                     "reference": s.reference,
+                    "cost_usd": p.generation.cost_usd,
+                    "prompt_tokens": p.generation.prompt_tokens,
+                    "completion_tokens": p.generation.completion_tokens,
                     "scores": {name: {"value": sc[i].value, "detail": sc[i].detail}
                                for name, sc in scores_by_metric.items()},
                 }
@@ -202,59 +245,41 @@ class Runner:
                     row["rollouts"] = p.rollouts
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    @staticmethod
-    def _headline(agg: dict[str, Any]) -> tuple[str, float]:
-        for metric, d in agg.items():
-            for key in ("accuracy", "judge_score", "pass^k"):
-                if key in d:
-                    return key, d[key]
-        # fall back to first numeric
-        for metric, d in agg.items():
-            for k, v in d.items():
-                if isinstance(v, (int, float)) and k != "n":
-                    return f"{metric}.{k}", v
-        return "score", 0.0
-
     def _write_leaderboard(self, rows: list[dict[str, Any]]) -> None:
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        (self.output_dir / "leaderboard.json").write_text(
-            json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        by_ds: dict[str, list] = {}
-        for r in rows:
-            by_ds.setdefault(r["dataset"], []).append(r)
-        lines = ["# MedEval Leaderboard", ""]
-        for dsid, rs in by_ds.items():
-            lines += [f"## {dsid}", "",
-                      "| Model | Score | Metric | n | Cost (USD) |",
-                      "|---|---|---|---|---|"]
-            ranked = sorted(rs, key=lambda r: self._headline(r["metrics"])[1], reverse=True)
-            for r in ranked:
-                key, val = self._headline(r["metrics"])
-                lines.append(
-                    f"| {r['model']} | {val:.4f} | {key} | {r['n']} | {r['model_cost_usd']:.4f} |")
-            lines.append("")
-        (self.output_dir / "leaderboard.md").write_text("\n".join(lines), encoding="utf-8")
+        if self.sharded:  # partial result; the global leaderboard comes from `merge`
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            (self.output_dir / f"leaderboard{self.shard_suffix}.json").write_text(
+                json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+            return
+        write_leaderboard(rows, self.output_dir)
 
     # --- entry points -----------------------------------------------------
     async def arun(self) -> list[dict[str, Any]]:
         leaderboard: list[dict[str, Any]] = []
         for ds in self.datasets:
             samples = ds.load()
+            if self.sharded:
+                samples = samples[self.shard_index::self.num_shards]  # strided shard
             if not samples:
-                print(f"[medeval] WARNING: dataset {ds.id!r} produced 0 samples")
+                print(f"[medeval] WARNING: dataset {ds.id!r} produced 0 samples"
+                      + (f" for shard {self.shard_index}/{self.num_shards}" if self.sharded else ""))
             for prov in self.providers.values():
                 if prov.judge_only:
                     continue
-                print(f"[medeval] {prov.id} × {ds.id}  ({len(samples)} samples)")
+                tag = f" [shard {self.shard_index}/{self.num_shards}]" if self.sharded else ""
+                print(f"[medeval] {prov.id} × {ds.id}  ({len(samples)} samples){tag}")
                 row = await self._eval(prov, ds, samples)
                 leaderboard.append(row)
-                key, val = self._headline(row["metrics"])
+                key, val = headline(row["metrics"])
                 print(f"           -> {key}={val:.4f}")
         self._write_leaderboard(leaderboard)
         for prov in self.providers.values():
             await prov.aclose()
-        print(f"[medeval] wrote {self.output_dir/'leaderboard.md'}")
+        if self.sharded:
+            print(f"[medeval] shard {self.shard_index}/{self.num_shards} done; "
+                  f"run `medeval merge {self.output_dir}` to build the leaderboard")
+        else:
+            print(f"[medeval] wrote {self.output_dir/'leaderboard.md'}")
         return leaderboard
 
     def run(self) -> list[dict[str, Any]]:
