@@ -80,6 +80,9 @@ end to end (great for verifying access):
 
 ```bash
 python -m medeval run configs/catalog_mcq.yaml      --limit 5   # MedQA/MedMCQA/PubMedQA/MMLU/CMB/CMExam/TCMBench
+python -m medeval run configs/catalog_en_med.yaml   --limit 5   # MedXpertQA/MedAgentsBench/MedCalc/MedR-Bench/MedHallu/Med-HALT/MLEC-QA/MediQ
+python -m medeval run configs/catalog_multimodal.yaml --limit 5 # MedFrameQA/SLAKE/TCM-Vision (needs a vision model)
+python -m medeval run configs/catalog_cn_tcm.yaml   --limit 5   # PromptCBLUE/TCM-BEST4SDT/TCMEval-PA
 python -m medeval run configs/example_tcm.yaml      --limit 3   # CMB + SDT + 方剂 + 安全 (judged)
 python -m medeval run configs/example_open_safety.yaml --limit 3
 python -m medeval run configs/example_agentclinic.yaml --limit 5   # pass^k, fully offline
@@ -159,6 +162,8 @@ API. **Mode B** (production): serve HF with `vllm serve`, route everything
 - `f1` / `rouge` / `bleu` — token-overlap vs. a reference answer; **CJK-aware**
   tokenization (char-level for Chinese, word-level for Latin, `jieba` if installed).
   ROUGE reports 1/2/L; BLEU is smoothed sentence-BLEU-4 (1..4 in detail).
+- `numeric_match` — calculation tasks (MedCalc-Bench): extracts the final number and
+  checks it within tolerance or an explicit `[lower_limit, upper_limit]` range.
 - `prescription_match` — **方剂结构匹配**: herb-set precision/recall/F1 (君臣佐使) +
   formula-name match + 治法 overlap, read from the structured gold (e.g. the
   MTCMB TCM-FRD `{治法, 方剂, 药物组成}` dict); herb names normalized (dosages

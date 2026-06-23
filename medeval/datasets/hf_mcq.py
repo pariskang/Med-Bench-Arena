@@ -58,6 +58,9 @@ class HFMCQAdapter(DatasetAdapter):
         self.answer_format = config.get("answer_format", "letter")
         self.inject_options = config.get("inject_options")
         self.options_inline = bool(config.get("options_inline", False))
+        # deterministically shuffle option order per sample (removes position bias,
+        # e.g. MedHallu's fixed correct-first 2-option layout)
+        self.shuffle_options = bool(config.get("shuffle_options", False))
         self.system_prompt = config.get("system_prompt")
         self.prompt_template = config.get("prompt_template")
         self.instruction = config.get(
@@ -136,8 +139,25 @@ class HFMCQAdapter(DatasetAdapter):
                 ks = [str(d.get("key", "")) for d in val]
                 return choices, ([k.upper() for k in ks] if all(len(k) == 1 for k in ks) else [])
             return [str(x) for x in val], []
+        # single string that is a stringified dict/list (e.g. Med-HALT
+        # "{'0': '...', '1': '...'}") -> parse and re-resolve
+        sval = str(val).strip()
+        if sval[:1] in ("{", "[") and sval[-1:] in ("}", "]"):
+            import ast
+            try:
+                parsed = ast.literal_eval(sval)
+            except (ValueError, SyntaxError):
+                parsed = None
+            if isinstance(parsed, dict):
+                parsed = {k: v for k, v in parsed.items()
+                          if str(k).strip().lower() != "correct answer"}
+                keys = list(parsed.keys())
+                letterkeys = keys if all(len(str(k)) == 1 and str(k).upper() in LETTERS
+                                         for k in keys) else []
+                return [str(parsed[k]) for k in keys], letterkeys
+            if isinstance(parsed, (list, tuple)):
+                return [str(x) for x in parsed], []
         # single string: try inline lettered options (CMExam), else wrap
-        sval = str(val)
         if self.options_inline or self._looks_inline(sval):
             parsed = self._split_inline(sval)
             if len(parsed) >= 2:
@@ -213,6 +233,8 @@ class HFMCQAdapter(DatasetAdapter):
             cval = row[ctx_field]
             if isinstance(cval, dict) and "contexts" in cval:
                 context = "\n".join(str(x) for x in cval["contexts"])
+            elif isinstance(cval, (list, tuple)):  # e.g. MedHallu Knowledge: list[str]
+                context = "\n".join(str(x) for x in cval)
             else:
                 context = str(cval)
 
@@ -228,18 +250,38 @@ class HFMCQAdapter(DatasetAdapter):
                 return None
             reference = {"index": gi, "letter": LETTERS[gi], "text": choices[gi]}
 
+        sid = f"{self.id}:{cfg or 'default'}:{row.get('id', i)}"
+        if self.shuffle_options:  # de-bias fixed option order (e.g. MedHallu correct-first)
+            choices, reference = self._shuffle(sid, choices, reference)
+
         user = self._render(question, choices, context)
         msgs = []
         if self.system_prompt:
             msgs.append(Message("system", self.system_prompt))
         images = self._resolve_images(row)
         msgs.append(Message("user", user, images=images or None))
-        sid = f"{self.id}:{cfg or 'default'}:{row.get('id', i)}"
         return Sample(
             id=sid, task_type=TaskType.MCQ, messages=msgs,
             choices=choices, reference=reference,
             meta={"path": self.path, "config": cfg, "subject": row.get("subject")},
         )
+
+    @staticmethod
+    def _shuffle(sid: str, choices: list[str], reference: dict[str, Any]
+                 ) -> tuple[list[str], dict[str, Any]]:
+        import hashlib
+        import random
+        seed = int(hashlib.md5(sid.encode("utf-8")).hexdigest()[:8], 16)  # stable across runs
+        perm = list(range(len(choices)))
+        random.Random(seed).shuffle(perm)
+        new_choices = [choices[i] for i in perm]
+        pos = {old: new for new, old in enumerate(perm)}  # old index -> new index
+        if "indices" in reference:
+            ref = {"indices": sorted(pos[i] for i in reference["indices"])}
+        else:
+            ni = pos[reference["index"]]
+            ref = {"index": ni, "letter": LETTERS[ni], "text": new_choices[ni]}
+        return new_choices, ref
 
     # --- multimodal -------------------------------------------------------
     def _resolve_images(self, row: dict[str, Any]) -> list[str]:
@@ -254,41 +296,8 @@ class HFMCQAdapter(DatasetAdapter):
         return out
 
     def _encode_image(self, val: Any) -> list[str]:
-        if isinstance(val, (bytes, bytearray)):  # raw image bytes (e.g. TCM-Ladder parquet)
-            import base64
-            mime = "image/png" if bytes(val[:8]).startswith(b"\x89PNG") else "image/jpeg"
-            return [f"data:{mime};base64,{base64.b64encode(bytes(val)).decode('ascii')}"]
-        if isinstance(val, str):
-            if val.startswith(("http://", "https://", "data:")):
-                return [val]
-            return [self.image_base + val]
-        if isinstance(val, dict):  # HF Image feature: {bytes, path} or {url}
-            if val.get("url"):
-                return [val["url"]]
-            if val.get("path"):
-                p = val["path"]
-                pre = self.image_base if not p.startswith(("http", "data:")) else ""
-                return [pre + p]
-            if val.get("bytes"):
-                import base64
-                return [f"data:image/png;base64,{base64.b64encode(val['bytes']).decode('ascii')}"]
-            return []
-        if isinstance(val, (list, tuple)):
-            out: list[str] = []
-            for v in val:
-                out.extend(self._encode_image(v))
-            return out
-        try:  # PIL.Image
-            import base64
-            import io
-            from PIL import Image as _PIL
-            if isinstance(val, _PIL.Image):
-                buf = io.BytesIO()
-                val.convert("RGB").save(buf, format="PNG")
-                return [f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"]
-        except Exception:
-            pass
-        return []
+        from ..schema import encode_images
+        return encode_images(val, self.image_base)
 
     def _render(self, question: str, choices: list[str], context: str) -> str:
         opt_block = "\n".join(f"{LETTERS[i]}. {c}" for i, c in enumerate(choices))

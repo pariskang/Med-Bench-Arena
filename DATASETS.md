@@ -226,6 +226,44 @@ messages), an optional `rubric` (normalized from many shapes), `reference`, and 
 
 ---
 
+## Batch 2 — additional datasets (verified 2026-06)
+
+Configs live in `configs/catalog_en_med.yaml`, `catalog_multimodal.yaml`,
+`catalog_cn_tcm.yaml`. ✅ = config-only · ⚠️ = one-time prep · 🔒 = gated/unreleased.
+
+### English QA / reasoning / calc / hallucination
+| Dataset | Access | Adapter / notes |
+|---|---|---|
+| **MedXpertQA** ✅ | `TsinghuaC3I/MedXpertQA` `Text`(2450)/`MM`(2000) | `hf_mcq`, dict options A–J, gold `label` letter. MM: `image: images` (filenames) + unzip `images.zip`, set `image_base`. |
+| **MedAgentsBench** ✅ | `xk-huang/medagents-benchmark` | `hf_mcq`, 10 configs, `split: test_hard`, dict options, gold `answer_idx`. (≠ MedAgentBench.) |
+| **MedCalc-Bench** ✅ | `ncbi/MedCalc-Bench-v1.2` CSV (v1.0/1.1 gated) | `local_json`+`numeric_match`; `prompt: [Patient Note, Question]`, map `lower_limit`/`upper_limit` (range check, ±5% decimal / exact else). |
+| **MedR-Bench** ✅ | GitHub raw JSON (HF gated) | `local_json`+`llm_judge`; JSON keyed by PMCID → auto-flattened; gold `generate_case.diagnosis_results`. |
+| **MedHallu** ✅ | `UTAustin-AIHealth/MedHallu` `pqa_labeled`/`pqa_artificial` | `hf_mcq`, 2-col options `[Ground Truth, Hallucinated Answer]`, gold = `Hallucinated Answer`, `answer_format: text`, `shuffle_options: true` (de-bias). |
+| **Med-HALT** ⚠️ | `openlifescienceai/Med-HALT` | `reasoning_nota` → `hf_mcq` (`options` is a stringified dict, auto-parsed; `correct_index`). FCT (yes/no), fake (judge), IR_* (gen) need prep/judge. |
+| **MLEC-QA** ✅ | `shuyuej/MLEC-QA-Benchmark` (new HF mirror, test) | `hf_mcq`, dict options A–E, gold `answer` letter. (Full 5-subset set still Google-Drive.) |
+| **MediQ** ✅ | `stellalisy/MediQ` `all_dev_good.jsonl` | `hf_mcq` single-turn upper-bound (`answer_idx`, `context` list). Interactive form needs a MediQ AgentAdapter. |
+
+### Multimodal VQA
+| Dataset | Access | Adapter / notes |
+|---|---|---|
+| **MedFrameQA** ✅ | `SuhaoYu1020/MedFrameQA` parquet | `hf_mcq`, multi-image `image: [image_1..image_5]` (embedded HF Image), `correct_answer` letter. |
+| **SLAKE-en** ✅ | `mdwiratathya/SLAKE-vqa-english` parquet | `local_json` open VQA, embedded `image`, `llm_judge`. (Bilingual `BoKelvin/SLAKE` needs `imgs.zip`.) |
+| **TCM-Vision-Benchmark** ⚠️ | `FreedomIntelligence/TCM-Vision-Benchmark` JSON | `hf_mcq`, 7204 image MCQ (Tongue 768); `image` = path in `tcm_bench_images.zip` (775MB) → unzip, set `image_base`. |
+| OmniMedVQA / PMC-VQA / MedBookVQA ⚠️ | HF + images.zip (10.7/18.9/0.8 GB) | `hf_mcq`; download+unzip, set `image_base` (configs commented in `catalog_multimodal.yaml`). |
+| GMAI-MMBench 🔒 | `OpenGVLab/GMAI-MMBench` (gated) | VLMEvalKit TSV; `image` is a base64 string (`encode_images` auto-detects). Use `*_VAL.tsv`. |
+
+### Chinese-med / TCM extensions
+| Dataset | Access | Adapter / notes |
+|---|---|---|
+| **PromptCBLUE** ✅ | `tchenglv/PromptCBLUE` `dev.json` (JSONL!) | `local_json`+`f1`/`rouge`; `{input, target, task_dataset}`. (orig `michael-wzhu` id is dead; CBLUE raw is submission-only.) |
+| **TCM-BEST4SDT** ✅ | `DYJG-research/TCM-BEST4SDT` raw JSON | MCQ (3 files, `option` dict, multi) → `hf_mcq`; SDT (300, open) → `local_json`+`llm_judge`/`syndrome_chain`. |
+| **TCMEval-PA** ⚠️ | Figshare `.xlsx` (`ndownloader.figshare.com/files/56581880`) | 处方审核 MCQ; convert xlsx→json, `options_inline: true`, `answer_format: multi`. (≠ TCMEval-SDT.) |
+| **TCM-Text-Exams** ⚠️ | `FreedomIntelligence/TCM-Text-Exams` JSON | `hf_mcq` after flattening the dict-of-5-sections to an array (`load_dataset("json")` errors on the dict). |
+| **ZhongJing-TCM-Benchmark** 🔒 | `pariskang/ZhongJing-TCM-Benchmark` | Generation **pipeline only** — `data/final/*.jsonl` 404; run it to produce data (schema in `src/schemas.py`). |
+| **ZhongJing-OMNI** 🔒 | `CMLM/ZhongJing-OMNI` | **Data not released** (only `demo.png`); described CSVs 404. Use TCM-Vision-Benchmark / TCM-Ladder for live TCM 多模态. |
+
+Prep one-liners: **TCM-Text-Exams** `json.dump([{**r,"section":s} for s,recs in d.items() for r in recs], ...)`; **TCMEval-PA** `openpyxl` → rows → json; both then load via `hf_mcq` `data_files`.
+
 ## Cross-cutting gotchas
 
 - **Use the labeled split:** MedMCQA → `validation`; CMB → `val`; TCMEval-SDT → `Train`.

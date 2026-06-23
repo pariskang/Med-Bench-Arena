@@ -1,0 +1,77 @@
+# Catalog: medical multimodal (image) VQA. Needs a vision model (LiteLLM gpt-4o /
+# Poe / served vLLM). Three groups: (A) images embedded in parquet -> loadable as-is;
+# (B) image = path into a separate images.zip -> download+unzip, set image_base;
+# (C) gated. Verified against live HF (2026-06).
+#
+#   python -m medeval run configs/catalog_multimodal.yaml --limit 5
+run:
+  output_dir: ./results/multimodal
+  concurrency: 8
+  cache: true
+eval:
+  gen: {temperature: 0.0, max_tokens: 512}
+  judge_model: mock-judge
+models:
+  - {id: gpt-4o, type: litellm, model: openai/gpt-4o, api_key_env: OPENAI_API_KEY}   # vision
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+  # - {id: mock-model, type: mock, behavior: auto}    # offline dry-run (can't see images)
+
+datasets:
+  # ===== (A) embedded in parquet — loadable directly =====
+  - id: medframeqa               # multi-image clinical frames (1-5 imgs/question), MCQ
+    adapter: hf_mcq
+    path: SuhaoYu1020/MedFrameQA
+    name: default
+    split: test                  # 2851; options=Sequence[str], gold=correct_answer letter
+    field_map: {question: question, options: options, answer: correct_answer,
+                image: [image_1, image_2, image_3, image_4, image_5]}
+    answer_format: letter
+    metrics: [mcq_accuracy]       # NOTE: parquet embeds images -> large download
+
+  - id: slake_en                 # open VQA (no options) — radiology, en
+    adapter: local_json
+    task: open_qa
+    format: parquet
+    source_url: https://huggingface.co/datasets/mdwiratathya/SLAKE-vqa-english/resolve/main/data/test-00000-of-00001.parquet
+    field_map: {prompt: question, reference: answer, image: image}
+    metrics: [llm_judge, f1]
+
+  # ===== TCM multimodal =====
+  - id: tcm_vision_benchmark     # ShizhenGPT: 7204 image MCQ incl. Tongue 舌诊 (768)
+    adapter: hf_mcq
+    format: json
+    data_files: https://huggingface.co/datasets/FreedomIntelligence/TCM-Vision-Benchmark/resolve/main/TCM-Vision_Benchmark.json
+    field_map: {question: question, options: options, answer: answer_idx, image: image}
+    answer_format: letter
+    image_base: ./data/tcm_vision/   # download+unzip tcm_bench_images.zip (775MB) here first
+    metrics: [mcq_accuracy]
+    # TCM-Ladder visual (tongue/herb, raw bytes) -> see configs/example_tcm_ladder.yaml
+
+  # ===== (B) needs images.zip — set image_base to the unzip dir =====
+  - id: medxpertqa_mm            # MedXpertQA multimodal subset (2000), images.zip 517MB
+    adapter: hf_mcq
+    path: TsinghuaC3I/MedXpertQA
+    name: MM
+    split: test
+    field_map: {question: question, options: options, answer: label, image: images}
+    answer_format: letter
+    image_base: ./data/medxpertqa_images/   # unzip images.zip; 'images' is a list of filenames
+    metrics: [mcq_accuracy]
+
+  # OmniMedVQA (10.7GB OmniMedVQA.zip; QA JSONs inside it):
+  # - {id: omnimedvqa, adapter: hf_mcq, format: json,
+  #    data_files: ./OmniMedVQA/QA_information/Open-access/*.json,
+  #    field_map: {question: question, options: [option_A,option_B,option_C,option_D], answer: gt_answer, image: image_path},
+  #    answer_format: text, image_base: ./OmniMedVQA/}
+  # PMC-VQA (RadGenome/PMC-VQA; images.zip 18.9GB):
+  # - {id: pmc_vqa, adapter: hf_mcq, format: csv,
+  #    data_files: https://huggingface.co/datasets/RadGenome/PMC-VQA/resolve/main/test_clean.csv,
+  #    field_map: {question: Question, options: ["Choice A","Choice B","Choice C","Choice D"], answer: Answer_label, image: Figure_path},
+  #    answer_format: letter, image_base: ./pmc_images/}
+  # MedBookVQA (figures.zip 839MB, CC-BY-NC): data.json -> options assembled from Answer+Distractors.
+
+  # ===== (C) gated =====
+  # GMAI-MMBench (OpenGVLab/GMAI-MMBench, gated): VLMEvalKit TSV; image col is a base64
+  # STRING (encode_images auto-detects base64); use GMAI_mm_bench_VAL.tsv (has answers).
+  # - {id: gmai_mmbench, adapter: hf_mcq, format: csv, data_files: ./GMAI_mm_bench_VAL.tsv,
+  #    field_map: {question: question, options: [A,B,C,D,E], answer: answer, image: image}, answer_format: letter}

@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from ..schema import Message, Prediction, Sample, TaskType
+from ..schema import Message, Prediction, Sample, TaskType, encode_images
 from .base import DatasetAdapter, register_dataset
 
 CACHE_DIR = Path(os.environ.get("MEDEVAL_CACHE", "data/cache"))
@@ -79,6 +79,7 @@ class LocalJSONAdapter(DatasetAdapter):
         self.explode = config.get("explode")
         self.fm = dict(config.get("field_map", {}))
         self.system_prompt = config.get("system_prompt")
+        self.image_base = config.get("image_base", "")
         self.prompt_template = config.get("prompt_template")
         if not self.metrics:
             self.metrics = ["llm_judge"]
@@ -113,6 +114,9 @@ class LocalJSONAdapter(DatasetAdapter):
 
     def _read_records(self, fp: Path) -> list[dict[str, Any]]:
         fmt = self.format or self._infer_ext(str(fp)).lstrip(".")
+        if fmt == "parquet":  # binary; embedded-image open VQA (e.g. SLAKE-en)
+            import datasets as _ds
+            return [dict(r) for r in _ds.Dataset.from_parquet(str(fp))]
         text = fp.read_text(encoding="utf-8")
         if fmt in ("jsonl",):
             return [json.loads(line) for line in text.splitlines() if line.strip()]
@@ -133,6 +137,12 @@ class LocalJSONAdapter(DatasetAdapter):
                     flat.extend(x for x in v if isinstance(x, dict))
                 if flat:
                     return flat
+            # dict keyed by id with dict values (e.g. MedR-Bench keyed by PMCID)
+            dict_vals = [v for v in data.values() if isinstance(v, dict)]
+            if dict_vals and len(dict_vals) == len(data):
+                for k, v in zip(data.keys(), dict_vals):
+                    v.setdefault("id", k)
+                return dict_vals
             return [data]
         return data
 
@@ -166,8 +176,13 @@ class LocalJSONAdapter(DatasetAdapter):
         return v
 
     def _build_sample(self, root: dict, item: dict, ridx: int, iidx: int) -> Sample | None:
-        raw_prompt = self._resolve(self.fm.get("prompt"), root, item)
-        if raw_prompt is None:
+        pfield = self.fm.get("prompt")
+        if isinstance(pfield, list):  # join several columns (e.g. Patient Note + Question)
+            parts = [_stringify(self._resolve(p, root, item)) for p in pfield]
+            raw_prompt = "\n\n".join(p for p in parts if p)
+        else:
+            raw_prompt = self._resolve(pfield, root, item)
+        if raw_prompt is None or raw_prompt == "":
             return None
         messages = self._to_messages(raw_prompt, root, item)
         if not messages:
@@ -217,11 +232,18 @@ class LocalJSONAdapter(DatasetAdapter):
                 content = m.get("content", "")
                 if content:
                     msgs.append(Message(role, str(content)))
-            return msgs
-        text = _stringify(raw_prompt)
-        if self.prompt_template:
-            text = self.prompt_template.format(prompt=text)
-        msgs.append(Message("user", text))
+        else:
+            text = _stringify(raw_prompt)
+            if self.prompt_template:
+                text = self.prompt_template.format(prompt=text)
+            msgs.append(Message("user", text))
+        # multimodal: attach images (open VQA) to the last user turn
+        imgs = encode_images(self._resolve(self.fm.get("image"), root, item), self.image_base)
+        if imgs:
+            for m in reversed(msgs):
+                if m.role == "user":
+                    m.images = imgs
+                    break
         return msgs
 
     def _stringify_ref(self, value: Any) -> str:

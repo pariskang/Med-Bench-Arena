@@ -64,6 +64,20 @@ def test_prescription_match_stringified_list_reference():
     assert sc.detail["n_ref_herbs"] == 3
 
 
+def test_numeric_match_tolerance_and_range():
+    # ±5% relative tolerance (default)
+    s = _sample("100")
+    assert _score("numeric_match", s, _pred("The result is 103.")).value == 1.0
+    assert _score("numeric_match", s, _pred("The result is 130.")).value == 0.0
+    # explicit [lower, upper] range (MedCalc-Bench)
+    s2 = Sample(id="r", task_type=TaskType.OPEN_QA, messages=[Message("u", "q")],
+                reference={"lower_limit": "23.97", "upper_limit": "26.50"})
+    assert _score("numeric_match", s2, _pred("...creatinine clearance is 25.2 mL/min.")).value == 1.0
+    assert _score("numeric_match", s2, _pred("answer = 30")).value == 0.0
+    # commas + "answer is" marker
+    assert _score("numeric_match", _sample("1500"), _pred("Total is 1,500 mL")).value == 1.0
+
+
 def test_bleu_orders_and_smoothing():
     s = _sample("a b c d e f g h")
     full = _score("bleu", s, _pred("a b c d e f g h"))

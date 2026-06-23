@@ -1,0 +1,102 @@
+# Catalog: English medical QA / reasoning / calculation / hallucination.
+# Every entry verified against the live source (2026-06). Default model is the
+# offline `mock` (downloads the real data); swap in a real backend + judge.
+#
+#   python -m medeval run configs/catalog_en_med.yaml --limit 5
+run:
+  output_dir: ./results/en_med
+  concurrency: 16
+  cache: true
+eval:
+  gen: {temperature: 0.0, max_tokens: 1024}
+  judge_model: mock-judge
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+  # - {id: gpt-4o, type: litellm, model: openai/gpt-4o, api_key_env: OPENAI_API_KEY}
+  # - {id: deepseek-r1, type: litellm, model: deepseek/deepseek-reasoner, api_key_env: DEEPSEEK_API_KEY, judge_only: true}
+
+datasets:
+  # ---- expert reasoning MCQ ----
+  - id: medxpertqa_text
+    adapter: hf_mcq
+    path: TsinghuaC3I/MedXpertQA
+    name: Text
+    split: test                 # 2450; dict options A-J, gold 'label' is the letter
+    field_map: {question: question, options: options, answer: label}
+    answer_format: letter
+    metrics: [mcq_accuracy]
+
+  - id: medagentsbench_medqa     # arXiv 2503.07459 (≠ MedAgentBench). 10 source configs.
+    adapter: hf_mcq
+    path: xk-huang/medagents-benchmark
+    name: MedQA                  # or [MedQA, MedMCQA, MedBullets, MedExQA, PubMedQA, MMLU, MMLU-Pro, AfrimedQA, MedXpertQA-R, MedXpertQA-U]
+    split: test_hard             # the benchmark's curated hard subset (also: test)
+    field_map: {question: question, options: options, answer: answer_idx}
+    answer_format: letter
+    metrics: [mcq_accuracy]
+
+  # ---- calculation (numeric, range tolerance) ----
+  - id: medcalc_bench
+    adapter: local_json
+    task: open_qa
+    format: csv
+    source_url: https://huggingface.co/datasets/ncbi/MedCalc-Bench-v1.2/resolve/main/test_data_11_18_final.csv
+    field_map: {prompt: ["Patient Note", "Question"], reference: "Ground Truth Answer",
+                lower_limit: "Lower Limit", upper_limit: "Upper Limit"}
+    metrics: [numeric_match]     # correct iff Lower Limit <= pred <= Upper Limit (±5% decimal / exact else)
+    # use v1.2 (ungated, CC-BY-SA); v1.0/v1.1 are gated. Exclude date-output calculators.
+
+  # ---- real-case clinical reasoning (open, judged) ----
+  - id: medrbench_diagnosis      # GitHub only (HF gated); JSON keyed by PMCID -> auto-flattened
+    adapter: local_json
+    task: open_qa
+    format: json
+    source_url: https://raw.githubusercontent.com/MAGIC-AI4Med/MedRBench/main/data/MedRBench/diagnosis_957_cases_with_rare_disease_491.json
+    field_map: {prompt: raw_case, reference: generate_case.diagnosis_results}
+    metrics: [llm_judge, rouge]
+
+  # ---- hallucination detection ----
+  - id: medhallu                 # discriminate the fabricated answer of two (de-biased by shuffle)
+    adapter: hf_mcq
+    path: UTAustin-AIHealth/MedHallu
+    name: pqa_labeled            # or pqa_artificial (9k)
+    split: train
+    field_map: {question: Question, options: ["Ground Truth", "Hallucinated Answer"],
+                answer: "Hallucinated Answer", context: Knowledge}
+    answer_format: text
+    shuffle_options: true        # remove the fixed correct-first position bias
+    instruction: "One answer is factually hallucinated and one is correct. Reply with the letter of the HALLUCINATED answer."
+    metrics: [mcq_accuracy]
+
+  - id: medhalt_nota             # None-of-the-Above reasoning test; stringified-dict options auto-parsed
+    adapter: hf_mcq
+    path: openlifescienceai/Med-HALT
+    name: reasoning_nota
+    split: train
+    field_map: {question: question, options: options, answer: correct_index}
+    answer_format: index
+    metrics: [mcq_accuracy]
+
+  # ---- Chinese licensing exam (new HF mirror) + interactive (single-turn form) ----
+  - id: mlec_qa                  # shuyuej mirror: test split, 5 subsets merged, 13,624 Q
+    adapter: hf_mcq
+    path: shuyuej/MLEC-QA-Benchmark
+    split: test
+    field_map: {question: qtext, options: options, answer: answer}
+    answer_format: letter
+    metrics: [mcq_accuracy]
+
+  - id: mediq_mcq                # MediQ full-information upper bound (all facts given at once)
+    adapter: hf_mcq
+    format: jsonl
+    data_files: https://raw.githubusercontent.com/stellalisy/MediQ/main/data/all_dev_good.jsonl
+    field_map: {question: question, options: options, answer: answer_idx, context: context}
+    answer_format: letter
+    metrics: [mcq_accuracy]
+    # interactive proactive-questioning form needs a MediQ AgentAdapter (Expert<->Patient loop).
+
+  # ---- needs a one-time prep step (documented in DATASETS.md) ----
+  # MedXpertQA MM: same repo, name: MM, + field_map.image: images, image_base: <unzip images.zip>.
+  # Med-HALT reasoning_FCT (yes/no) / reasoning_fake (judge) / IR_* (generation) — see DATASETS.md.
+  # CBLUE: submission-only (held-out labels) — use PromptCBLUE (configs/catalog_cn_tcm.yaml) instead.

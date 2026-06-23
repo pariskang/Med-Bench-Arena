@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import re
 import time
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -35,6 +36,53 @@ def image_to_url(img: str) -> str:
     with open(img, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("ascii")
     return f"data:{mime};base64,{b64}"
+
+
+def encode_images(val: Any, base: str = "") -> list[str]:
+    """Normalize many image representations to a list of URL/data-URI strings.
+
+    Handles: str (URL/path, ``base`` prepended to relative), HF Image dict
+    ``{bytes|path|url}``, raw ``bytes`` (parquet binary), nested lists, and PIL.
+    """
+    if val is None:
+        return []
+    if isinstance(val, (bytes, bytearray)):
+        mime = "image/png" if bytes(val[:8]).startswith(b"\x89PNG") else "image/jpeg"
+        return [f"data:{mime};base64,{base64.b64encode(bytes(val)).decode('ascii')}"]
+    if isinstance(val, str):
+        if not val:
+            return []
+        if val.startswith(("http://", "https://", "data:")):
+            return [val]
+        # bare base64 image string (e.g. GMAI-MMBench TSV): long, pure base64
+        # charset (paths/text have ./-/_ or spaces and break the match)
+        if len(val) > 256 and re.fullmatch(r"[A-Za-z0-9+/=\s]+", val):
+            return [f"data:image/jpeg;base64,{val.strip()}"]
+        return [base + val]
+    if isinstance(val, dict):  # HF Image feature
+        if val.get("url"):
+            return [val["url"]]
+        if val.get("path"):
+            p = val["path"]
+            return [(base if not p.startswith(("http", "data:")) else "") + p]
+        if val.get("bytes"):
+            return encode_images(val["bytes"], base)
+        return []
+    if isinstance(val, (list, tuple)):
+        out: list[str] = []
+        for v in val:
+            out.extend(encode_images(v, base))
+        return out
+    try:  # PIL.Image
+        import io
+        from PIL import Image as _PIL
+        if isinstance(val, _PIL.Image):
+            buf = io.BytesIO()
+            val.convert("RGB").save(buf, format="PNG")
+            return [f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"]
+    except Exception:
+        pass
+    return []
 
 
 @dataclass
