@@ -13,6 +13,7 @@ from .runner import Runner, run_config
 from .providers.base import available_providers, create_provider, register_provider
 from .datasets.base import available_adapters, create_dataset, register_dataset
 from .metrics.base import available_metrics, create_metric, register_metric
+from .submit import export, to_opencompass, to_medbench
 
 __version__ = "0.1.0"
 
@@ -22,5 +23,6 @@ __all__ = [
     "available_providers", "create_provider", "register_provider",
     "available_adapters", "create_dataset", "register_dataset",
     "available_metrics", "create_metric", "register_metric",
+    "export", "to_opencompass", "to_medbench",
     "__version__",
 ]

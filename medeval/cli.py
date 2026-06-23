@@ -39,6 +39,14 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    from .submit import export
+    out = export(args.results_dir, args.format, args.output,
+                 test_dir=args.medbench_test_dir)
+    print(f"[medeval] wrote {args.format} submission to {out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="medeval", description="MedEval runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -53,6 +61,14 @@ def main(argv: list[str] | None = None) -> int:
 
     p_list = sub.add_parser("list", help="list registered providers / adapters / metrics")
     p_list.set_defaults(func=cmd_list)
+
+    p_exp = sub.add_parser("export", help="export results as an OpenCompass / MedBench submission")
+    p_exp.add_argument("results_dir", help="a run's output dir (with detail__*.jsonl)")
+    p_exp.add_argument("--format", required=True, choices=["opencompass", "medbench"])
+    p_exp.add_argument("--output", "--out", required=True, dest="output")
+    p_exp.add_argument("--medbench-test-dir", default=None,
+                       help="MedBench data tree; fills answers into original *_test.jsonl")
+    p_exp.set_defaults(func=cmd_export)
 
     args = parser.parse_args(argv)
     return args.func(args)

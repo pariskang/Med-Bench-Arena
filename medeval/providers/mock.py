@@ -15,7 +15,7 @@ from typing import Any
 from ..schema import Generation, Message
 from .base import ModelProvider, register_provider
 
-_LETTER_LINE = re.compile(r"^\s*([A-Z])[.)]\s+", re.MULTILINE)
+_LETTER_LINE = re.compile(r"^\s*([A-Z])\s*[.):：、]\s*", re.MULTILINE)
 _RUBRIC_ID = re.compile(r"\(id=([^,)]+)")
 
 

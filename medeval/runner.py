@@ -21,7 +21,7 @@ from .metrics.base import create_metric
 
 # Import implementation modules so their @register_* decorators run.
 from .providers import mock, litellm_provider, poe, hf  # noqa: F401
-from .datasets import hf_mcq, local_json, agent_env, tcmbench  # noqa: F401
+from .datasets import hf_mcq, local_json, agent_env, tcmbench, medbench  # noqa: F401
 from .metrics import mcq, llm_judge, text_match, prescription, syndrome  # noqa: F401
 
 
@@ -187,8 +187,11 @@ class Runner:
         with open(path, "w", encoding="utf-8") as f:
             for i, s in enumerate(samples):
                 p = preds[s.id]
+                prompt = s.messages[-1].content if s.messages else ""
                 row = {
                     "sample_id": s.id, "task": s.task_type.value,
+                    "prompt": prompt,
+                    "choices": s.choices,
                     "prediction": p.generation.text[:2000],
                     "parsed": p.parsed if not isinstance(p.parsed, set) else list(p.parsed),
                     "reference": s.reference,

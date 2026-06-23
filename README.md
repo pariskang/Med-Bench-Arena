@@ -47,10 +47,11 @@ any one can be swapped or extended in isolation.
 medeval/
 ├── schema.py                  # canonical types
 ├── providers/{base,hf,poe,litellm_provider,mock}.py
-├── datasets/{base,hf_mcq,local_json,agent_env,tcmbench,medagentbench_grader}.py
+├── datasets/{base,hf_mcq,local_json,agent_env,tcmbench,medbench,medagentbench_grader}.py
 ├── metrics/{base,mcq,llm_judge,text_match,prescription,syndrome}.py
 ├── runner.py                  # orchestrator
-└── cli.py                     # python -m medeval run config.yaml
+├── submit.py                  # OpenCompass / MedBench submission export
+└── cli.py                     # python -m medeval run|export|list
 ```
 
 ---
@@ -189,6 +190,29 @@ curl http://localhost:8080/fhir/metadata                 # verify
 python -m medeval run configs/example_medagentbench.yaml --limit 10
 ```
 
+## Leaderboard submission (MedBench / OpenCompass)
+
+Export a run's predictions into an upload-ready format:
+
+```bash
+# OpenCompass predictions:  predictions/<model>/<dataset>.json
+#   = {"0": {origin_prompt, prediction, gold?}, ...}   (matches GenInferencer output)
+python -m medeval export results/mcq --format opencompass --out oc_out
+
+# MedBench: download the platform data, run the `medbench` adapter over the
+# *_test.jsonl files, then fill answers back into the original records by other.id:
+python -m medeval run configs/example_medbench_submit.yaml
+python -m medeval export results/medbench --format medbench \
+       --out submission --medbench-test-dir /path/to/MedBench
+# -> submission/<set>/<set>.jsonl  with `answer` filled (letter for MCQ, text for NLG);
+#    question/options/other preserved verbatim. Upload via the MedBench web UI.
+```
+
+MedBench test answers are **held out** — you generate predictions locally and the
+platform scores them. The `medbench` adapter loads `{question, passage, options,
+answer, other:{source,id}}` records; MCQ answers become a letter, generation tasks
+the free text, joined by `other.id`.
+
 ## Extending
 
 ```python
@@ -212,7 +236,7 @@ in YAML.
   have unit tests.
 - Caveats, gating and field maps per dataset: [`DATASETS.md`](DATASETS.md).
 
-Metrics now include F1 / ROUGE / 方剂 structure match; MedAgentBench is wired to a
-live FHIR server with a built-in grader (official `refsol.py` pluggable). Further
-extension points: distributed scheduling and MedBench / OpenCompass leaderboard
-submission.
+Metrics include F1 / ROUGE / BLEU / 方剂结构匹配 / 证型链结构分; MedAgentBench is
+wired to a live FHIR server (built-in grader, official `refsol.py` pluggable);
+results export to OpenCompass / MedBench submission formats. Further extension
+points: distributed scheduling and more structured metrics.
