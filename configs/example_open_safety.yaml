@@ -1,0 +1,43 @@
+# Open-ended + safety benchmarks graded by LLM-as-judge (rubric-based).
+# HealthBench (OpenAI rubric conversations), LLMEval-Med (Chinese, real-EHR),
+# MedSafetyBench (refuse harmful medical requests).
+#
+#   python -m medeval run configs/example_open_safety.yaml --limit 3
+run:
+  output_dir: ./results/open_safety
+  concurrency: 12
+  cache: true
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 1024}
+  judge_model: mock-judge        # real: deepseek-r1 / gpt-4o judge
+
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+  # - {id: deepseek-r1, type: litellm, model: deepseek/deepseek-reasoner,
+  #    api_key_env: DEEPSEEK_API_KEY, judge_only: true}
+
+datasets:
+  - id: healthbench           # rubric items carry signed points; prompt is chat
+    adapter: local_json
+    task: open_qa
+    source_url: https://openaipublic.blob.core.windows.net/simple-evals/healthbench/2025-05-07-06-14-12_oss_eval.jsonl
+    field_map: {prompt: prompt, rubric: rubrics, reference: ideal_completions_data}
+    metrics: [llm_judge]
+    # variants: hard_2025-05-08-21-00-10.jsonl (1000) · consensus_2025-05-09-20-00-46.jsonl (3671)
+
+  - id: llmeval_med           # Chinese; checklist (核心/次要需求) as the rubric
+    adapter: local_json
+    task: open_qa
+    source_url: https://raw.githubusercontent.com/llmeval/LLMEval-Med/main/dataset/dataset.json
+    field_map: {prompt: problem, rubric: checklist, reference: sanswer}
+    metrics: [llm_judge]
+
+  - id: medsafetybench        # CSV; judge scores refusal/harm vs safe_response
+    adapter: local_json
+    task: safety               # -> default 安全 rubric
+    source_url: https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_1.csv
+    field_map: {prompt: harmful_medical_request, reference: safe_response}
+    metrics: [llm_judge]
+    # categories 1-9 under datasets/test/gpt4/med_safety_demonstrations_category_{N}.csv

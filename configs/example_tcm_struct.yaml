@@ -1,0 +1,26 @@
+# Structured TCM metrics demo: 经络腧穴 (meridian_acupoint) + 古籍本体
+# (classics_ontology). Fully offline (mock model). The gold meridian/acupoint/
+# classics lists are mapped from the data via field_map and scored by set-F1.
+#
+#   python -m medeval run configs/example_tcm_struct.yaml
+run:
+  output_dir: ./results/tcm_struct
+  cache: false
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 256}
+
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+
+datasets:
+  - id: acupuncture_open
+    adapter: local_json
+    task: open_qa
+    path: data/samples/demo_tcm_struct.jsonl
+    field_map: {prompt: question, reference: reference,
+                meridians: meridians, acupoints: acupoints, classics: classics}
+    metrics: [meridian_acupoint, classics_ontology, rouge]
+    # extend the lexicons if needed:
+    #   metrics config is per-metric; pass extra_acupoints / extra_classics / lexicon_file
+    #   by registering a custom metric instance, or rely on the built-in lexicon.

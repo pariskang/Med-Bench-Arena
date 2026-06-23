@@ -1,0 +1,16 @@
+[
+  {
+    "Medical Record ID": "demo-1",
+    "Clinical Data": "男性，38岁。主诉及病史：鼻流血15天。伴口干咽燥，心烦少寐。脉浮大数、84次/分，舌苔薄白、舌质红。",
+    "TCM Syndrome": "热伤阳络;血热妄行",
+    "Syndrome Differentiation": "辨证：热伤阳络，血热妄行",
+    "Answers of TCM Syndrome": "B;I"
+  },
+  {
+    "Medical Record ID": "demo-2",
+    "Clinical Data": "女性，45岁。胃脘胀痛，嗳气吞酸，情志不畅时加重，纳呆。舌苔薄白，脉弦。",
+    "TCM Syndrome": "肝胃不和",
+    "Syndrome Differentiation": "辨证：肝气犯胃，肝胃不和",
+    "Answers of TCM Syndrome": "A"
+  }
+]

@@ -1,0 +1,39 @@
+# MedAgentBench — FHIR virtual-EHR agent benchmark (Stanford, NEJM AI 2025).
+# The model acts via FHIR REST calls (GET / POST / FINISH) against a real EHR
+# server; scored with pass@1 (query tasks exact-match, action tasks verify the
+# write actually landed for the target patient).
+#
+# REQUIRES a running FHIR server. Start the official HAPI-FHIR image first:
+#
+#   docker pull jyxsu6/medagentbench:latest
+#   docker run -p 8080:8080 jyxsu6/medagentbench:latest     # serves :8080/fhir
+#   # verify:  curl http://localhost:8080/fhir/metadata
+#
+# Then (with a real doctor model + your key):
+#   python -m medeval run configs/example_medagentbench.yaml --limit 10
+#
+# Grading: the built-in grader handles query tasks exactly and action tasks
+# approximately. For the OFFICIAL per-task rules, obtain the gated refsol.py
+# (project Box link) and set `refsol_path` below — it is called exactly as the
+# upstream harness does: getattr(refsol, task_id)(task, answer, fhir_base).
+run:
+  output_dir: ./results/medagentbench
+  concurrency: 4
+  cache: true
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 1024}
+
+models:
+  # A capable tool-using model is required; the offline mock cannot drive FHIR.
+  - {id: gpt-4o, type: litellm, model: openai/gpt-4o, api_key_env: OPENAI_API_KEY}
+  # - {id: claude, type: poe, bot_name: Claude-Opus-4.7, api_key_env: POE_API_KEY}
+
+datasets:
+  - id: medagentbench
+    adapter: medagentbench
+    fhir_base: http://localhost:8080/fhir
+    max_turns: 8                 # paper: 8 rounds (repo config default: 5)
+    metrics: [pass_k]
+    k: 1                         # the benchmark uses pass@1 by design
+    # refsol_path: /path/to/refsol.py   # optional: official gated grader

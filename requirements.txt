@@ -1,0 +1,15 @@
+# Core (always needed)
+pyyaml>=6.0
+
+# Dataset loading (hf_mcq, and any HF-hosted source)
+datasets>=2.18
+
+# --- Model backends: install only what you use ---
+# LiteLLM backend + the recommended DeepSeek-R1 judge:
+litellm>=1.40
+# Poe backend (OpenAI-compatible client):
+openai>=1.30
+# Distributed `pool --backend ray` (optional):
+# ray>=2.9
+# Local HF backend (heavy; GPU): install separately as needed
+#   pip install vllm transformers torch peft

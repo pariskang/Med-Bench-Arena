@@ -1,0 +1,509 @@
+@prefix tcm: <http://medeval.org/tcm/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+<http://medeval.org/tcm/张仲景> rdf:type tcm:author ;
+    rdfs:label "张仲景" ;
+    tcm:aliases "张机" ;
+    tcm:aliases "医圣" ;
+    tcm:dynasty <http://medeval.org/tcm/东汉>.
+<http://medeval.org/tcm/东汉> rdf:type tcm:dynasty ;
+    rdfs:label "东汉".
+<http://medeval.org/tcm/王叔和> rdf:type tcm:author ;
+    rdfs:label "王叔和" ;
+    tcm:aliases "王熙" ;
+    tcm:dynasty <http://medeval.org/tcm/西晋>.
+<http://medeval.org/tcm/西晋> rdf:type tcm:dynasty ;
+    rdfs:label "西晋".
+<http://medeval.org/tcm/皇甫谧> rdf:type tcm:author ;
+    rdfs:label "皇甫谧" ;
+    tcm:dynasty <http://medeval.org/tcm/西晋>.
+<http://medeval.org/tcm/巢元方> rdf:type tcm:author ;
+    rdfs:label "巢元方" ;
+    tcm:dynasty <http://medeval.org/tcm/隋>.
+<http://medeval.org/tcm/隋> rdf:type tcm:dynasty ;
+    rdfs:label "隋".
+<http://medeval.org/tcm/孙思邈> rdf:type tcm:author ;
+    rdfs:label "孙思邈" ;
+    tcm:aliases "药王" ;
+    tcm:dynasty <http://medeval.org/tcm/唐>.
+<http://medeval.org/tcm/唐> rdf:type tcm:dynasty ;
+    rdfs:label "唐".
+<http://medeval.org/tcm/王焘> rdf:type tcm:author ;
+    rdfs:label "王焘" ;
+    tcm:dynasty <http://medeval.org/tcm/唐>.
+<http://medeval.org/tcm/钱乙> rdf:type tcm:author ;
+    rdfs:label "钱乙" ;
+    tcm:aliases "钱仲阳" ;
+    tcm:dynasty <http://medeval.org/tcm/宋>.
+<http://medeval.org/tcm/宋> rdf:type tcm:dynasty ;
+    rdfs:label "宋".
+<http://medeval.org/tcm/陈言> rdf:type tcm:author ;
+    rdfs:label "陈言" ;
+    tcm:aliases "陈无择" ;
+    tcm:dynasty <http://medeval.org/tcm/宋>.
+<http://medeval.org/tcm/李杲> rdf:type tcm:author ;
+    rdfs:label "李杲" ;
+    tcm:aliases "李东垣" ;
+    tcm:aliases "东垣" ;
+    tcm:dynasty <http://medeval.org/tcm/金>.
+<http://medeval.org/tcm/金> rdf:type tcm:dynasty ;
+    rdfs:label "金".
+<http://medeval.org/tcm/刘完素> rdf:type tcm:author ;
+    rdfs:label "刘完素" ;
+    tcm:aliases "刘河间" ;
+    tcm:aliases "河间" ;
+    tcm:dynasty <http://medeval.org/tcm/金>.
+<http://medeval.org/tcm/张从正> rdf:type tcm:author ;
+    rdfs:label "张从正" ;
+    tcm:aliases "张子和" ;
+    tcm:aliases "子和" ;
+    tcm:dynasty <http://medeval.org/tcm/金>.
+<http://medeval.org/tcm/朱震亨> rdf:type tcm:author ;
+    rdfs:label "朱震亨" ;
+    tcm:aliases "朱丹溪" ;
+    tcm:aliases "丹溪" ;
+    tcm:dynasty <http://medeval.org/tcm/元>.
+<http://medeval.org/tcm/元> rdf:type tcm:dynasty ;
+    rdfs:label "元".
+<http://medeval.org/tcm/李时珍> rdf:type tcm:author ;
+    rdfs:label "李时珍" ;
+    tcm:aliases "李东璧" ;
+    tcm:aliases "濒湖" ;
+    tcm:dynasty <http://medeval.org/tcm/明>.
+<http://medeval.org/tcm/明> rdf:type tcm:dynasty ;
+    rdfs:label "明".
+<http://medeval.org/tcm/张介宾> rdf:type tcm:author ;
+    rdfs:label "张介宾" ;
+    tcm:aliases "张景岳" ;
+    tcm:aliases "景岳" ;
+    tcm:dynasty <http://medeval.org/tcm/明>.
+<http://medeval.org/tcm/吴有性> rdf:type tcm:author ;
+    rdfs:label "吴有性" ;
+    tcm:aliases "吴又可" ;
+    tcm:dynasty <http://medeval.org/tcm/明>.
+<http://medeval.org/tcm/吴谦> rdf:type tcm:author ;
+    rdfs:label "吴谦" ;
+    tcm:dynasty <http://medeval.org/tcm/清>.
+<http://medeval.org/tcm/清> rdf:type tcm:dynasty ;
+    rdfs:label "清".
+<http://medeval.org/tcm/叶桂> rdf:type tcm:author ;
+    rdfs:label "叶桂" ;
+    tcm:aliases "叶天士" ;
+    tcm:aliases "天士" ;
+    tcm:dynasty <http://medeval.org/tcm/清>.
+<http://medeval.org/tcm/吴瑭> rdf:type tcm:author ;
+    rdfs:label "吴瑭" ;
+    tcm:aliases "吴鞠通" ;
+    tcm:aliases "鞠通" ;
+    tcm:dynasty <http://medeval.org/tcm/清>.
+<http://medeval.org/tcm/薛雪> rdf:type tcm:author ;
+    rdfs:label "薛雪" ;
+    tcm:aliases "薛生白" ;
+    tcm:dynasty <http://medeval.org/tcm/清>.
+<http://medeval.org/tcm/王清任> rdf:type tcm:author ;
+    rdfs:label "王清任" ;
+    tcm:aliases "王勋臣" ;
+    tcm:dynasty <http://medeval.org/tcm/清>.
+<http://medeval.org/tcm/唐宗海> rdf:type tcm:author ;
+    rdfs:label "唐宗海" ;
+    tcm:aliases "唐容川" ;
+    tcm:dynasty <http://medeval.org/tcm/清>.
+<http://medeval.org/tcm/王肯堂> rdf:type tcm:author ;
+    rdfs:label "王肯堂" ;
+    tcm:dynasty <http://medeval.org/tcm/明>.
+<http://medeval.org/tcm/程国彭> rdf:type tcm:author ;
+    rdfs:label "程国彭" ;
+    tcm:aliases "程钟龄" ;
+    tcm:dynasty <http://medeval.org/tcm/清>.
+<http://medeval.org/tcm/黄帝内经> rdf:type tcm:classic ;
+    rdfs:label "黄帝内经" ;
+    tcm:dynasty "战国秦汉" ;
+    tcm:category "医经" ;
+    tcm:aliases "内经" ;
+    tcm:dynasty <http://medeval.org/tcm/战国秦汉> ;
+    tcm:category <http://medeval.org/tcm/医经> ;
+    tcm:authored_by <http://medeval.org/tcm/托名黄帝>.
+<http://medeval.org/tcm/战国秦汉> rdf:type tcm:dynasty ;
+    rdfs:label "战国秦汉".
+<http://medeval.org/tcm/医经> rdf:type tcm:category ;
+    rdfs:label "医经".
+<http://medeval.org/tcm/托名黄帝> rdf:type tcm:author ;
+    rdfs:label "托名黄帝".
+<http://medeval.org/tcm/素问> rdf:type tcm:classic ;
+    rdfs:label "素问" ;
+    tcm:dynasty "战国秦汉" ;
+    tcm:category "医经" ;
+    tcm:aliases "黄帝内经素问" ;
+    tcm:dynasty <http://medeval.org/tcm/战国秦汉> ;
+    tcm:category <http://medeval.org/tcm/医经> ;
+    tcm:authored_by <http://medeval.org/tcm/托名黄帝> ;
+    tcm:part_of <http://medeval.org/tcm/黄帝内经>.
+<http://medeval.org/tcm/灵枢> rdf:type tcm:classic ;
+    rdfs:label "灵枢" ;
+    tcm:dynasty "战国秦汉" ;
+    tcm:category "医经" ;
+    tcm:aliases "灵枢经" ;
+    tcm:dynasty <http://medeval.org/tcm/战国秦汉> ;
+    tcm:category <http://medeval.org/tcm/医经> ;
+    tcm:authored_by <http://medeval.org/tcm/托名黄帝> ;
+    tcm:part_of <http://medeval.org/tcm/黄帝内经>.
+<http://medeval.org/tcm/难经> rdf:type tcm:classic ;
+    rdfs:label "难经" ;
+    tcm:dynasty "秦汉" ;
+    tcm:category "医经" ;
+    tcm:aliases "黄帝八十一难经" ;
+    tcm:dynasty <http://medeval.org/tcm/秦汉> ;
+    tcm:category <http://medeval.org/tcm/医经> ;
+    tcm:authored_by <http://medeval.org/tcm/托名扁鹊>.
+<http://medeval.org/tcm/秦汉> rdf:type tcm:dynasty ;
+    rdfs:label "秦汉".
+<http://medeval.org/tcm/托名扁鹊> rdf:type tcm:author ;
+    rdfs:label "托名扁鹊".
+<http://medeval.org/tcm/神农本草经> rdf:type tcm:classic ;
+    rdfs:label "神农本草经" ;
+    tcm:dynasty "秦汉" ;
+    tcm:category "本草" ;
+    tcm:aliases "本草经" ;
+    tcm:aliases "本经" ;
+    tcm:dynasty <http://medeval.org/tcm/秦汉> ;
+    tcm:category <http://medeval.org/tcm/本草> ;
+    tcm:authored_by <http://medeval.org/tcm/托名神农>.
+<http://medeval.org/tcm/本草> rdf:type tcm:category ;
+    rdfs:label "本草".
+<http://medeval.org/tcm/托名神农> rdf:type tcm:author ;
+    rdfs:label "托名神农".
+<http://medeval.org/tcm/伤寒杂病论> rdf:type tcm:classic ;
+    rdfs:label "伤寒杂病论" ;
+    tcm:dynasty "东汉" ;
+    tcm:category "经方" ;
+    tcm:dynasty <http://medeval.org/tcm/东汉> ;
+    tcm:category <http://medeval.org/tcm/经方> ;
+    tcm:authored_by <http://medeval.org/tcm/张仲景>.
+<http://medeval.org/tcm/经方> rdf:type tcm:category ;
+    rdfs:label "经方".
+<http://medeval.org/tcm/伤寒论> rdf:type tcm:classic ;
+    rdfs:label "伤寒论" ;
+    tcm:dynasty "东汉" ;
+    tcm:category "经方" ;
+    tcm:aliases "伤寒" ;
+    tcm:dynasty <http://medeval.org/tcm/东汉> ;
+    tcm:category <http://medeval.org/tcm/经方> ;
+    tcm:authored_by <http://medeval.org/tcm/张仲景> ;
+    tcm:part_of <http://medeval.org/tcm/伤寒杂病论>.
+<http://medeval.org/tcm/金匮要略> rdf:type tcm:classic ;
+    rdfs:label "金匮要略" ;
+    tcm:dynasty "东汉" ;
+    tcm:category "经方" ;
+    tcm:aliases "金匮" ;
+    tcm:dynasty <http://medeval.org/tcm/东汉> ;
+    tcm:category <http://medeval.org/tcm/经方> ;
+    tcm:authored_by <http://medeval.org/tcm/张仲景> ;
+    tcm:part_of <http://medeval.org/tcm/伤寒杂病论>.
+<http://medeval.org/tcm/脉经> rdf:type tcm:classic ;
+    rdfs:label "脉经" ;
+    tcm:dynasty "西晋" ;
+    tcm:category "诊法" ;
+    tcm:dynasty <http://medeval.org/tcm/西晋> ;
+    tcm:category <http://medeval.org/tcm/诊法> ;
+    tcm:authored_by <http://medeval.org/tcm/王叔和>.
+<http://medeval.org/tcm/诊法> rdf:type tcm:category ;
+    rdfs:label "诊法".
+<http://medeval.org/tcm/针灸甲乙经> rdf:type tcm:classic ;
+    rdfs:label "针灸甲乙经" ;
+    tcm:dynasty "西晋" ;
+    tcm:category "针灸" ;
+    tcm:aliases "甲乙经" ;
+    tcm:dynasty <http://medeval.org/tcm/西晋> ;
+    tcm:category <http://medeval.org/tcm/针灸> ;
+    tcm:authored_by <http://medeval.org/tcm/皇甫谧>.
+<http://medeval.org/tcm/针灸> rdf:type tcm:category ;
+    rdfs:label "针灸".
+<http://medeval.org/tcm/诸病源候论> rdf:type tcm:classic ;
+    rdfs:label "诸病源候论" ;
+    tcm:dynasty "隋" ;
+    tcm:category "病机" ;
+    tcm:aliases "病源" ;
+    tcm:dynasty <http://medeval.org/tcm/隋> ;
+    tcm:category <http://medeval.org/tcm/病机> ;
+    tcm:authored_by <http://medeval.org/tcm/巢元方>.
+<http://medeval.org/tcm/病机> rdf:type tcm:category ;
+    rdfs:label "病机".
+<http://medeval.org/tcm/备急千金要方> rdf:type tcm:classic ;
+    rdfs:label "备急千金要方" ;
+    tcm:dynasty "唐" ;
+    tcm:category "方书" ;
+    tcm:aliases "千金要方" ;
+    tcm:aliases "千金方" ;
+    tcm:dynasty <http://medeval.org/tcm/唐> ;
+    tcm:category <http://medeval.org/tcm/方书> ;
+    tcm:authored_by <http://medeval.org/tcm/孙思邈>.
+<http://medeval.org/tcm/方书> rdf:type tcm:category ;
+    rdfs:label "方书".
+<http://medeval.org/tcm/千金翼方> rdf:type tcm:classic ;
+    rdfs:label "千金翼方" ;
+    tcm:dynasty "唐" ;
+    tcm:category "方书" ;
+    tcm:dynasty <http://medeval.org/tcm/唐> ;
+    tcm:category <http://medeval.org/tcm/方书> ;
+    tcm:authored_by <http://medeval.org/tcm/孙思邈>.
+<http://medeval.org/tcm/外台秘要> rdf:type tcm:classic ;
+    rdfs:label "外台秘要" ;
+    tcm:dynasty "唐" ;
+    tcm:category "方书" ;
+    tcm:aliases "外台" ;
+    tcm:dynasty <http://medeval.org/tcm/唐> ;
+    tcm:category <http://medeval.org/tcm/方书> ;
+    tcm:authored_by <http://medeval.org/tcm/王焘>.
+<http://medeval.org/tcm/太平惠民和剂局方> rdf:type tcm:classic ;
+    rdfs:label "太平惠民和剂局方" ;
+    tcm:dynasty "宋" ;
+    tcm:category "方书" ;
+    tcm:aliases "和剂局方" ;
+    tcm:aliases "局方" ;
+    tcm:dynasty <http://medeval.org/tcm/宋> ;
+    tcm:category <http://medeval.org/tcm/方书> ;
+    tcm:authored_by <http://medeval.org/tcm/陈师文>.
+<http://medeval.org/tcm/陈师文> rdf:type tcm:author ;
+    rdfs:label "陈师文".
+<http://medeval.org/tcm/小儿药证直诀> rdf:type tcm:classic ;
+    rdfs:label "小儿药证直诀" ;
+    tcm:dynasty "宋" ;
+    tcm:category "儿科" ;
+    tcm:dynasty <http://medeval.org/tcm/宋> ;
+    tcm:category <http://medeval.org/tcm/儿科> ;
+    tcm:authored_by <http://medeval.org/tcm/钱乙>.
+<http://medeval.org/tcm/儿科> rdf:type tcm:category ;
+    rdfs:label "儿科".
+<http://medeval.org/tcm/三因极一病证方论> rdf:type tcm:classic ;
+    rdfs:label "三因极一病证方论" ;
+    tcm:dynasty "宋" ;
+    tcm:category "病因" ;
+    tcm:aliases "三因方" ;
+    tcm:dynasty <http://medeval.org/tcm/宋> ;
+    tcm:category <http://medeval.org/tcm/病因> ;
+    tcm:authored_by <http://medeval.org/tcm/陈言>.
+<http://medeval.org/tcm/病因> rdf:type tcm:category ;
+    rdfs:label "病因".
+<http://medeval.org/tcm/脾胃论> rdf:type tcm:classic ;
+    rdfs:label "脾胃论" ;
+    tcm:dynasty "金" ;
+    tcm:category "内伤" ;
+    tcm:dynasty <http://medeval.org/tcm/金> ;
+    tcm:category <http://medeval.org/tcm/内伤> ;
+    tcm:authored_by <http://medeval.org/tcm/李杲>.
+<http://medeval.org/tcm/内伤> rdf:type tcm:category ;
+    rdfs:label "内伤".
+<http://medeval.org/tcm/内外伤辨惑论> rdf:type tcm:classic ;
+    rdfs:label "内外伤辨惑论" ;
+    tcm:dynasty "金" ;
+    tcm:category "内伤" ;
+    tcm:dynasty <http://medeval.org/tcm/金> ;
+    tcm:category <http://medeval.org/tcm/内伤> ;
+    tcm:authored_by <http://medeval.org/tcm/李杲>.
+<http://medeval.org/tcm/素问玄机原病式> rdf:type tcm:classic ;
+    rdfs:label "素问玄机原病式" ;
+    tcm:dynasty "金" ;
+    tcm:category "运气" ;
+    tcm:dynasty <http://medeval.org/tcm/金> ;
+    tcm:category <http://medeval.org/tcm/运气> ;
+    tcm:authored_by <http://medeval.org/tcm/刘完素>.
+<http://medeval.org/tcm/运气> rdf:type tcm:category ;
+    rdfs:label "运气".
+<http://medeval.org/tcm/儒门事亲> rdf:type tcm:classic ;
+    rdfs:label "儒门事亲" ;
+    tcm:dynasty "金" ;
+    tcm:category "攻邪" ;
+    tcm:dynasty <http://medeval.org/tcm/金> ;
+    tcm:category <http://medeval.org/tcm/攻邪> ;
+    tcm:authored_by <http://medeval.org/tcm/张从正>.
+<http://medeval.org/tcm/攻邪> rdf:type tcm:category ;
+    rdfs:label "攻邪".
+<http://medeval.org/tcm/丹溪心法> rdf:type tcm:classic ;
+    rdfs:label "丹溪心法" ;
+    tcm:dynasty "元" ;
+    tcm:category "杂病" ;
+    tcm:dynasty <http://medeval.org/tcm/元> ;
+    tcm:category <http://medeval.org/tcm/杂病> ;
+    tcm:authored_by <http://medeval.org/tcm/朱震亨>.
+<http://medeval.org/tcm/杂病> rdf:type tcm:category ;
+    rdfs:label "杂病".
+<http://medeval.org/tcm/格致余论> rdf:type tcm:classic ;
+    rdfs:label "格致余论" ;
+    tcm:dynasty "元" ;
+    tcm:category "医论" ;
+    tcm:dynasty <http://medeval.org/tcm/元> ;
+    tcm:category <http://medeval.org/tcm/医论> ;
+    tcm:authored_by <http://medeval.org/tcm/朱震亨>.
+<http://medeval.org/tcm/医论> rdf:type tcm:category ;
+    rdfs:label "医论".
+<http://medeval.org/tcm/本草纲目> rdf:type tcm:classic ;
+    rdfs:label "本草纲目" ;
+    tcm:dynasty "明" ;
+    tcm:category "本草" ;
+    tcm:aliases "纲目" ;
+    tcm:dynasty <http://medeval.org/tcm/明> ;
+    tcm:category <http://medeval.org/tcm/本草> ;
+    tcm:authored_by <http://medeval.org/tcm/李时珍>.
+<http://medeval.org/tcm/濒湖脉学> rdf:type tcm:classic ;
+    rdfs:label "濒湖脉学" ;
+    tcm:dynasty "明" ;
+    tcm:category "诊法" ;
+    tcm:dynasty <http://medeval.org/tcm/明> ;
+    tcm:category <http://medeval.org/tcm/诊法> ;
+    tcm:authored_by <http://medeval.org/tcm/李时珍>.
+<http://medeval.org/tcm/景岳全书> rdf:type tcm:classic ;
+    rdfs:label "景岳全书" ;
+    tcm:dynasty "明" ;
+    tcm:category "综合" ;
+    tcm:dynasty <http://medeval.org/tcm/明> ;
+    tcm:category <http://medeval.org/tcm/综合> ;
+    tcm:authored_by <http://medeval.org/tcm/张介宾>.
+<http://medeval.org/tcm/综合> rdf:type tcm:category ;
+    rdfs:label "综合".
+<http://medeval.org/tcm/温疫论> rdf:type tcm:classic ;
+    rdfs:label "温疫论" ;
+    tcm:dynasty "明" ;
+    tcm:category "温病" ;
+    tcm:aliases "瘟疫论" ;
+    tcm:dynasty <http://medeval.org/tcm/明> ;
+    tcm:category <http://medeval.org/tcm/温病> ;
+    tcm:authored_by <http://medeval.org/tcm/吴有性>.
+<http://medeval.org/tcm/温病> rdf:type tcm:category ;
+    rdfs:label "温病".
+<http://medeval.org/tcm/医宗金鉴> rdf:type tcm:classic ;
+    rdfs:label "医宗金鉴" ;
+    tcm:dynasty "清" ;
+    tcm:category "综合" ;
+    tcm:dynasty <http://medeval.org/tcm/清> ;
+    tcm:category <http://medeval.org/tcm/综合> ;
+    tcm:authored_by <http://medeval.org/tcm/吴谦>.
+<http://medeval.org/tcm/温热论> rdf:type tcm:classic ;
+    rdfs:label "温热论" ;
+    tcm:dynasty "清" ;
+    tcm:category "温病" ;
+    tcm:dynasty <http://medeval.org/tcm/清> ;
+    tcm:category <http://medeval.org/tcm/温病> ;
+    tcm:authored_by <http://medeval.org/tcm/叶桂>.
+<http://medeval.org/tcm/温病条辨> rdf:type tcm:classic ;
+    rdfs:label "温病条辨" ;
+    tcm:dynasty "清" ;
+    tcm:category "温病" ;
+    tcm:dynasty <http://medeval.org/tcm/清> ;
+    tcm:category <http://medeval.org/tcm/温病> ;
+    tcm:authored_by <http://medeval.org/tcm/吴瑭>.
+<http://medeval.org/tcm/湿热条辨> rdf:type tcm:classic ;
+    rdfs:label "湿热条辨" ;
+    tcm:dynasty "清" ;
+    tcm:category "温病" ;
+    tcm:aliases "湿热病篇" ;
+    tcm:dynasty <http://medeval.org/tcm/清> ;
+    tcm:category <http://medeval.org/tcm/温病> ;
+    tcm:authored_by <http://medeval.org/tcm/薛雪>.
+<http://medeval.org/tcm/医林改错> rdf:type tcm:classic ;
+    rdfs:label "医林改错" ;
+    tcm:dynasty "清" ;
+    tcm:category "瘀血" ;
+    tcm:dynasty <http://medeval.org/tcm/清> ;
+    tcm:category <http://medeval.org/tcm/瘀血> ;
+    tcm:authored_by <http://medeval.org/tcm/王清任>.
+<http://medeval.org/tcm/瘀血> rdf:type tcm:category ;
+    rdfs:label "瘀血".
+<http://medeval.org/tcm/血证论> rdf:type tcm:classic ;
+    rdfs:label "血证论" ;
+    tcm:dynasty "清" ;
+    tcm:category "血证" ;
+    tcm:dynasty <http://medeval.org/tcm/清> ;
+    tcm:category <http://medeval.org/tcm/血证> ;
+    tcm:authored_by <http://medeval.org/tcm/唐宗海>.
+<http://medeval.org/tcm/血证> rdf:type tcm:category ;
+    rdfs:label "血证".
+<http://medeval.org/tcm/证治准绳> rdf:type tcm:classic ;
+    rdfs:label "证治准绳" ;
+    tcm:dynasty "明" ;
+    tcm:category "综合" ;
+    tcm:dynasty <http://medeval.org/tcm/明> ;
+    tcm:category <http://medeval.org/tcm/综合> ;
+    tcm:authored_by <http://medeval.org/tcm/王肯堂>.
+<http://medeval.org/tcm/医学心悟> rdf:type tcm:classic ;
+    rdfs:label "医学心悟" ;
+    tcm:dynasty "清" ;
+    tcm:category "综合" ;
+    tcm:dynasty <http://medeval.org/tcm/清> ;
+    tcm:category <http://medeval.org/tcm/综合> ;
+    tcm:authored_by <http://medeval.org/tcm/程国彭>.
+<http://medeval.org/tcm/桂枝汤> rdf:type tcm:formula ;
+    rdfs:label "桂枝汤" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/麻黄汤> rdf:type tcm:formula ;
+    rdfs:label "麻黄汤" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/小柴胡汤> rdf:type tcm:formula ;
+    rdfs:label "小柴胡汤" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/白虎汤> rdf:type tcm:formula ;
+    rdfs:label "白虎汤" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/四逆汤> rdf:type tcm:formula ;
+    rdfs:label "四逆汤" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/理中丸> rdf:type tcm:formula ;
+    rdfs:label "理中丸" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/大承气汤> rdf:type tcm:formula ;
+    rdfs:label "大承气汤" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/五苓散> rdf:type tcm:formula ;
+    rdfs:label "五苓散" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/炙甘草汤> rdf:type tcm:formula ;
+    rdfs:label "炙甘草汤" ;
+    tcm:from_source <http://medeval.org/tcm/伤寒论>.
+<http://medeval.org/tcm/肾气丸> rdf:type tcm:formula ;
+    rdfs:label "肾气丸" ;
+    tcm:from_source <http://medeval.org/tcm/金匮要略>.
+<http://medeval.org/tcm/大黄牡丹汤> rdf:type tcm:formula ;
+    rdfs:label "大黄牡丹汤" ;
+    tcm:from_source <http://medeval.org/tcm/金匮要略>.
+<http://medeval.org/tcm/麦门冬汤> rdf:type tcm:formula ;
+    rdfs:label "麦门冬汤" ;
+    tcm:from_source <http://medeval.org/tcm/金匮要略>.
+<http://medeval.org/tcm/当归芍药散> rdf:type tcm:formula ;
+    rdfs:label "当归芍药散" ;
+    tcm:from_source <http://medeval.org/tcm/金匮要略>.
+<http://medeval.org/tcm/六味地黄丸> rdf:type tcm:formula ;
+    rdfs:label "六味地黄丸" ;
+    tcm:from_source <http://medeval.org/tcm/小儿药证直诀>.
+<http://medeval.org/tcm/补中益气汤> rdf:type tcm:formula ;
+    rdfs:label "补中益气汤" ;
+    tcm:from_source <http://medeval.org/tcm/脾胃论>.
+<http://medeval.org/tcm/清暑益气汤> rdf:type tcm:formula ;
+    rdfs:label "清暑益气汤" ;
+    tcm:from_source <http://medeval.org/tcm/脾胃论>.
+<http://medeval.org/tcm/银翘散> rdf:type tcm:formula ;
+    rdfs:label "银翘散" ;
+    tcm:from_source <http://medeval.org/tcm/温病条辨>.
+<http://medeval.org/tcm/桑菊饮> rdf:type tcm:formula ;
+    rdfs:label "桑菊饮" ;
+    tcm:from_source <http://medeval.org/tcm/温病条辨>.
+<http://medeval.org/tcm/清营汤> rdf:type tcm:formula ;
+    rdfs:label "清营汤" ;
+    tcm:from_source <http://medeval.org/tcm/温病条辨>.
+<http://medeval.org/tcm/安宫牛黄丸> rdf:type tcm:formula ;
+    rdfs:label "安宫牛黄丸" ;
+    tcm:from_source <http://medeval.org/tcm/温病条辨>.
+<http://medeval.org/tcm/血府逐瘀汤> rdf:type tcm:formula ;
+    rdfs:label "血府逐瘀汤" ;
+    tcm:from_source <http://medeval.org/tcm/医林改错>.
+<http://medeval.org/tcm/补阳还五汤> rdf:type tcm:formula ;
+    rdfs:label "补阳还五汤" ;
+    tcm:from_source <http://medeval.org/tcm/医林改错>.
+<http://medeval.org/tcm/越鞠丸> rdf:type tcm:formula ;
+    rdfs:label "越鞠丸" ;
+    tcm:from_source <http://medeval.org/tcm/丹溪心法>.
+<http://medeval.org/tcm/逍遥散> rdf:type tcm:formula ;
+    rdfs:label "逍遥散" ;
+    tcm:from_source <http://medeval.org/tcm/太平惠民和剂局方>.
+<http://medeval.org/tcm/四君子汤> rdf:type tcm:formula ;
+    rdfs:label "四君子汤" ;
+    tcm:from_source <http://medeval.org/tcm/太平惠民和剂局方>.

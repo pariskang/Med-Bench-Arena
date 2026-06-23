@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# MedEval outputs & caches (regenerated)
+results/
+data/cache/
+
+# Local model/data artifacts
+*.safetensors
+*.bin
+.DS_Store

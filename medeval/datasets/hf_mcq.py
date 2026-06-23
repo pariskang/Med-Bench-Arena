@@ -1,0 +1,359 @@
+"""Config-driven HuggingFace multiple-choice adapter (``adapter: hf_mcq``).
+
+Covers MedQA / MedMCQA / PubMedQA / MMLU-medical / CMB / CMExam / TCMBench / ...
+Adding another lettered-MCQ dataset is *just config* — point ``path`` at the HF
+repo and describe the columns in ``field_map``.
+
+It normalizes the three option layouts seen in the wild...
+  * dict column   ``{"A": "...", "B": "..."}``         -> options: <col>
+  * N columns     ``opa, opb, opc, opd``               -> options: [opa, opb, opc, opd]
+  * list column   ``["...", "...", ...]``              -> options: <col>
+...and the three answer encodings: ``letter`` ("B"), ``index`` (int 0-based),
+``text`` (the option's full text, e.g. PubMedQA yes/no/maybe).
+"""
+from __future__ import annotations
+
+import re
+import string
+from typing import Any
+
+from ..schema import Message, Prediction, Sample, TaskType
+from .base import DatasetAdapter, register_dataset
+
+LETTERS = string.ascii_uppercase
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s)).strip().lower()
+
+
+@register_dataset("hf_mcq")
+class HFMCQAdapter(DatasetAdapter):
+    """config:
+      path:          HF dataset repo id
+      name:          config name | list of config names (concatenated) | null
+      split:         split name (e.g. test, validation)
+      field_map:     {question, options, answer, context?}
+                       options: dict-col name | list-col name | [col, col, ...]
+      answer_format: letter | index | text | multi
+      inject_options: list[str]   # when there is no options column (e.g. yes/no/maybe)
+      system_prompt: optional system message
+      prompt_template: optional; placeholders {question} {options}
+      instruction:   trailing instruction (default: answer with a letter)
+      trust_remote_code: bool
+      limit:         cap number of samples
+    """
+
+    def __init__(self, config: dict[str, Any]):
+        super().__init__(config)
+        self.path = config.get("path")
+        self.name = config.get("name")
+        self.split = config.get("split")  # default chosen per-mode in load()
+        # data_files escape hatch: load raw json/csv/parquet directly, bypassing a
+        # dataset's (possibly broken / removed) loading script. e.g. CMB on
+        # datasets>=5 errors via the script but loads fine as raw json data_files.
+        self.data_files = config.get("data_files")
+        self.format = config.get("format", "json")
+        self.fm = dict(config.get("field_map", {}))
+        self.answer_format = config.get("answer_format", "letter")
+        self.inject_options = config.get("inject_options")
+        self.options_inline = bool(config.get("options_inline", False))
+        self.system_prompt = config.get("system_prompt")
+        self.prompt_template = config.get("prompt_template")
+        self.instruction = config.get(
+            "instruction",
+            "Answer with the letter of the correct option (e.g. \"A\"). "
+            "请只回答正确选项的字母。",
+        )
+        self.trust_remote_code = bool(config.get("trust_remote_code", False))
+        # multimodal: field_map.image may name a column (or list) of images;
+        # image_base is prepended to relative paths/URLs.
+        self.image_base = config.get("image_base", "")
+        # constant question when the data has no question column (e.g. an
+        # image-classification set: TCM-Ladder visual = image + category label)
+        self.question_text = config.get("question_text", "")
+        if not self.metrics:
+            self.metrics = ["mcq_accuracy"]
+
+    # --- loading ----------------------------------------------------------
+    def load(self) -> list[Sample]:
+        from datasets import load_dataset  # lazy
+
+        samples: list[Sample] = []
+        if self.data_files:  # raw-file mode (json/csv/parquet): single -> "train"
+            ds = load_dataset(self.format, data_files=self.data_files,
+                              split=self.split or "train")
+            self._ingest(ds, None, samples)
+            return samples
+
+        configs = self.name if isinstance(self.name, list) else [self.name]
+        for cfg in configs:
+            kwargs: dict[str, Any] = {"split": self.split or "test"}
+            if cfg:
+                kwargs["name"] = cfg
+            if self.trust_remote_code:
+                kwargs["trust_remote_code"] = True
+            ds = load_dataset(self.path, **kwargs)
+            if self._ingest(ds, cfg, samples):
+                return samples
+        return samples
+
+    def _ingest(self, ds, cfg, samples: list[Sample]) -> bool:
+        """Append samples from one loaded split; return True if the limit was hit."""
+        for i, row in enumerate(ds):
+            s = self._row_to_sample(row, cfg, i)
+            if s is not None:
+                samples.append(s)
+            if self.limit and len(samples) >= self.limit:
+                return True
+        return False
+
+    def _resolve_options(self, row: dict[str, Any]) -> tuple[list[str], list[str]]:
+        """Return (choices, keys) where keys are the source letter/keys if any.
+
+        Handles the option layouts seen across datasets: N separate columns;
+        a dict column ``{"A": ...}`` (dropping null slots like CMB's ``F: null``);
+        a list column; a list of ``{key, value}`` objects (fzkuji/CMExam mirror);
+        and a single inline lettered string (CMExam CSV).
+        """
+        opt = self.fm.get("options")
+        if opt is None and self.inject_options:
+            return list(self.inject_options), []
+        if isinstance(opt, list):  # N separate columns
+            vals = ["" if row.get(c) is None else str(row[c]) for c in opt]
+            while len(vals) > 2 and not vals[-1].strip():  # drop trailing empty slots (e.g. blank E)
+                vals.pop()
+            return vals, []
+        val = row[opt]
+        if isinstance(val, dict):  # dict column {"A": ...} — drop null option slots
+            keys = [k for k in val.keys() if val[k] is not None and str(val[k]).strip()]
+            if all(len(k) == 1 and k.upper() in LETTERS for k in keys):
+                keys = sorted(keys, key=lambda k: k.upper())
+            return [str(val[k]) for k in keys], keys
+        if isinstance(val, (list, tuple)):  # list column
+            if val and isinstance(val[0], dict):  # [{"key":"A","value":"..."}]
+                choices = [str(d.get("value", d.get("text", ""))) for d in val]
+                ks = [str(d.get("key", "")) for d in val]
+                return choices, ([k.upper() for k in ks] if all(len(k) == 1 for k in ks) else [])
+            return [str(x) for x in val], []
+        # single string: try inline lettered options (CMExam), else wrap
+        sval = str(val)
+        if self.options_inline or self._looks_inline(sval):
+            parsed = self._split_inline(sval)
+            if len(parsed) >= 2:
+                return [t for _, t in parsed], [k for k, _ in parsed]
+        return [sval], []
+
+    @staticmethod
+    def _looks_inline(s: str) -> bool:
+        return len(re.findall(r"(?m)^\s*[A-Za-z][\s．.、:：)]", s)) >= 2
+
+    @staticmethod
+    def _split_inline(s: str) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        for line in re.split(r"[\n\r]+", s):
+            m = re.match(r"^\s*([A-Za-z])[\s．.、:：)]+\s*(.+)$", line)
+            if m:
+                out.append((m.group(1).upper(), m.group(2).strip()))
+        return out
+
+    def _gold_index(self, row: dict[str, Any], choices: list[str], keys: list[str]):
+        ans = row[self.fm["answer"]]
+        fmt = self.answer_format
+        if fmt == "index":
+            try:
+                return int(ans)
+            except (TypeError, ValueError):
+                return None
+        if fmt == "letter":
+            letter = str(ans).strip().upper()
+            if keys:  # dict-keyed options: map by key identity
+                up = [k.upper() for k in keys]
+                if letter in up:
+                    return up.index(letter)
+            if len(letter) == 1 and letter in LETTERS:
+                idx = LETTERS.index(letter)
+                return idx if idx < len(choices) else None
+            return None
+        if fmt == "text":
+            target = _norm(ans)
+            for j, c in enumerate(choices):
+                if _norm(c) == target:
+                    return j
+            return None
+        if fmt == "multi":
+            return None  # handled by _gold_indices
+        return None
+
+    def _gold_indices(self, row: dict[str, Any], choices: list[str], keys: list[str]) -> list[int]:
+        ans = str(row[self.fm["answer"]]).strip().upper()
+        letters = re.findall(r"[A-Z]", ans)
+        out = []
+        for L in letters:
+            if keys:
+                up = [k.upper() for k in keys]
+                if L in up:
+                    out.append(up.index(L))
+            elif L in LETTERS and LETTERS.index(L) < len(choices):
+                out.append(LETTERS.index(L))
+        return sorted(set(out))
+
+    def _row_to_sample(self, row: dict[str, Any], cfg: str | None, i: int) -> Sample | None:
+        try:
+            choices, keys = self._resolve_options(row)
+        except (KeyError, TypeError):
+            return None
+        if not choices:
+            return None
+        qfield = self.fm.get("question")
+        question = str(row[qfield]) if qfield else self.question_text
+        ctx_field = self.fm.get("context")
+        context = ""
+        if ctx_field and ctx_field in row and row[ctx_field]:
+            cval = row[ctx_field]
+            if isinstance(cval, dict) and "contexts" in cval:
+                context = "\n".join(str(x) for x in cval["contexts"])
+            else:
+                context = str(cval)
+
+        reference: dict[str, Any] = {}
+        if self.answer_format == "multi":
+            idxs = self._gold_indices(row, choices, keys)
+            if not idxs:
+                return None
+            reference["indices"] = idxs
+        else:
+            gi = self._gold_index(row, choices, keys)
+            if gi is None or gi >= len(choices):
+                return None
+            reference = {"index": gi, "letter": LETTERS[gi], "text": choices[gi]}
+
+        user = self._render(question, choices, context)
+        msgs = []
+        if self.system_prompt:
+            msgs.append(Message("system", self.system_prompt))
+        images = self._resolve_images(row)
+        msgs.append(Message("user", user, images=images or None))
+        sid = f"{self.id}:{cfg or 'default'}:{row.get('id', i)}"
+        return Sample(
+            id=sid, task_type=TaskType.MCQ, messages=msgs,
+            choices=choices, reference=reference,
+            meta={"path": self.path, "config": cfg, "subject": row.get("subject")},
+        )
+
+    # --- multimodal -------------------------------------------------------
+    def _resolve_images(self, row: dict[str, Any]) -> list[str]:
+        field = self.fm.get("image")
+        if not field:
+            return []
+        cols = field if isinstance(field, list) else [field]
+        out: list[str] = []
+        for c in cols:
+            if c in row and row[c] is not None:
+                out.extend(self._encode_image(row[c]))
+        return out
+
+    def _encode_image(self, val: Any) -> list[str]:
+        if isinstance(val, (bytes, bytearray)):  # raw image bytes (e.g. TCM-Ladder parquet)
+            import base64
+            mime = "image/png" if bytes(val[:8]).startswith(b"\x89PNG") else "image/jpeg"
+            return [f"data:{mime};base64,{base64.b64encode(bytes(val)).decode('ascii')}"]
+        if isinstance(val, str):
+            if val.startswith(("http://", "https://", "data:")):
+                return [val]
+            return [self.image_base + val]
+        if isinstance(val, dict):  # HF Image feature: {bytes, path} or {url}
+            if val.get("url"):
+                return [val["url"]]
+            if val.get("path"):
+                p = val["path"]
+                pre = self.image_base if not p.startswith(("http", "data:")) else ""
+                return [pre + p]
+            if val.get("bytes"):
+                import base64
+                return [f"data:image/png;base64,{base64.b64encode(val['bytes']).decode('ascii')}"]
+            return []
+        if isinstance(val, (list, tuple)):
+            out: list[str] = []
+            for v in val:
+                out.extend(self._encode_image(v))
+            return out
+        try:  # PIL.Image
+            import base64
+            import io
+            from PIL import Image as _PIL
+            if isinstance(val, _PIL.Image):
+                buf = io.BytesIO()
+                val.convert("RGB").save(buf, format="PNG")
+                return [f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"]
+        except Exception:
+            pass
+        return []
+
+    def _render(self, question: str, choices: list[str], context: str) -> str:
+        opt_block = "\n".join(f"{LETTERS[i]}. {c}" for i, c in enumerate(choices))
+        if self.prompt_template:
+            return self.prompt_template.format(
+                question=question, options=opt_block, context=context
+            )
+        head = f"{context}\n\n" if context else ""
+        return f"{head}{question}\n\n{opt_block}\n\n{self.instruction}"
+
+    # --- parsing ----------------------------------------------------------
+    def parse(self, sample: Sample, text: str) -> Prediction:
+        from ..schema import Generation, Prediction as P
+        n = len(sample.choices or [])
+        if "indices" in sample.reference:
+            parsed: Any = self._extract_multi(text, n, sample.choices)
+        else:
+            parsed = self._extract_single(text, n, sample.choices or [])
+        return P(sample_id=sample.id, generation=Generation(text=text), parsed=parsed)
+
+    @staticmethod
+    def _letters_for(n: int) -> list[str]:
+        return list(LETTERS[:n])
+
+    def _extract_single(self, text: str, n: int, choices: list[str]) -> int | None:
+        if not text:
+            return None
+        letters = self._letters_for(n)
+        t = text.strip()
+        # 1) explicit "answer is X" / "答案是X" / "正确选项为X"
+        #    The letter must be standalone (not the first letter of an option word
+        #    like the "A" in "Atrophy") -> require it is not followed by a letter.
+        m = re.search(
+            r"(?:answer|correct option|正确答案|答案|选项)\s*(?:is|:|：|为|是)?\s*\(?([A-Z])\)?(?![A-Za-z])",
+            t, re.IGNORECASE,
+        )
+        if m and m.group(1).upper() in letters:
+            return letters.index(m.group(1).upper())
+        # 2) a parenthesized or punctuated standalone letter, prefer the last
+        cands = re.findall(r"(?:^|[^A-Za-z])\(?([A-Z])\)?(?:[.):、]|\b)", t)
+        cands = [c.upper() for c in cands if c.upper() in letters]
+        if cands:
+            return letters.index(cands[-1])
+        # 3) fall back to option-text containment
+        tl = _norm(t)
+        for j, c in enumerate(choices):
+            if c and _norm(c) in tl:
+                return j
+        return None
+
+    def _extract_multi(self, text: str, n: int, choices: list[str] | None) -> list[int]:
+        """Extract multiple selected options without grabbing capitals from prose
+        words. Handles concatenated runs ('BCDE') and delimited lists
+        ('B, C, D and E' / 'B、C、D、E')."""
+        letters = self._letters_for(n)
+        rng = re.escape("".join(letters))
+        t = text or ""
+        picks: set[int] = set()
+        # contiguous runs of >=2 option letters, e.g. "BCDE"
+        for run in re.findall(rf"(?<![A-Za-z])([{rng}]{{2,}})(?![A-Za-z])", t):
+            picks.update(letters.index(c) for c in run)
+        # standalone single option letters, e.g. "B, C, D and E"
+        for c in re.findall(rf"(?<![A-Za-z])([{rng}])(?![A-Za-z])", t):
+            picks.add(letters.index(c))
+        if picks:
+            return sorted(picks)
+        one = self._extract_single(t, n, choices)
+        return [one] if one is not None else []

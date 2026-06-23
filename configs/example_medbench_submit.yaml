@@ -1,0 +1,38 @@
+# MedBench (medbench.opencompass.org.cn) submission workflow.
+#
+# MedBench test answers are HELD OUT — you generate predictions locally and upload
+# them; scoring happens on the platform. Steps:
+#
+#   1) Download the MedBench data from the platform (per evaluation set you get a
+#      <DATASET>_test.jsonl with answer=null, plus a 提交结果示例.jsonl example).
+#   2) Run your model over them with this config (point `path` at a *_test.jsonl
+#      file or a directory of them).
+#   3) Export a submission:
+#        # MedBench upload format (preserves the platform's records, fills `answer`):
+#        python -m medeval export results/medbench --format medbench \
+#               --out submission --medbench-test-dir /path/to/MedBench
+#        # or OpenCompass predictions format:
+#        python -m medeval export results/medbench --format opencompass --out oc_out
+#   4) Upload the per-dataset files via the MedBench web UI (or register a model API).
+run:
+  output_dir: ./results/medbench
+  concurrency: 16
+  cache: true
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 1024}
+
+models:
+  - {id: my-model, type: litellm, model: openai/gpt-4o, api_key_env: OPENAI_API_KEY}
+  # - {id: my-model, type: mock, behavior: auto}        # offline dry-run
+
+datasets:
+  # one entry per evaluation set (id should match the set name, e.g. Med-Exam)
+  - id: Med-Exam
+    adapter: medbench
+    path: /path/to/MedBench/Med-Exam/Med-Exam_test.jsonl   # file or directory
+    metrics: []          # held-out answers -> no local scoring; export & upload
+  # - id: MedMC
+  #   adapter: medbench
+  #   path: /path/to/MedBench/MedMC/MedMC_test.jsonl
+  #   metrics: []

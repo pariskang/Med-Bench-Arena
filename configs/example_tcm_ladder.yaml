@@ -1,0 +1,49 @@
+# TCM-Ladder (Xie et al. 2025, arXiv 2505.24063) — open on HuggingFace
+# (timzzyus/TCM-Ladder, CC-BY-4.0). Two released sets wired here:
+#   - multiChoice: 12,778 bilingual text MCQ (single + multi), no images.
+#   - visual:       8,802 tongue/herb images (raw JPEG bytes), label = herb|tongue.
+# The HF auto-config is broken, so load each parquet via data_files.
+#
+#   python -m medeval run configs/example_tcm_ladder.yaml --limit 20
+#
+# A vision model is required for the image set; the text set needs only an LLM.
+run:
+  output_dir: ./results/tcm_ladder
+  concurrency: 8
+  cache: true
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 256}
+
+models:
+  - {id: gpt-4o, type: litellm, model: openai/gpt-4o, api_key_env: OPENAI_API_KEY}  # vision-capable
+  # - {id: mock-model, type: mock, behavior: auto}     # offline dry-run
+
+datasets:
+  # --- text MCQ (no change needed; A-E columns, multi-answer) ---
+  - id: tcm_ladder_mc
+    adapter: hf_mcq
+    format: parquet
+    data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/main/multiChoice.parquet
+    split: train
+    field_map: {question: question, options: [A, B, C, D, E], answer: answer}
+    answer_format: multi          # "C" and "ABCDE" both handled; blank trailing E dropped
+    metrics: [mcq_accuracy]
+
+  # --- multimodal: tongue/herb image classification (舌象/中药) ---
+  # visual.parquet rows are (image-bytes, answer-letter, category). The original
+  # 4-image MCQ ("which image shows Huangqi?") is assembled at eval time and its
+  # distractors are NOT in the parquet, so we score the released signal directly:
+  # recognise the image modality (herb 中药 vs tongue 舌象) from the gold category.
+  # This exercises the full raw-bytes -> data-URL -> vision-model -> score path.
+  - id: tcm_ladder_visual
+    adapter: hf_mcq
+    format: parquet
+    data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/main/visual.parquet
+    split: train
+    question_text: "这张图片是中药饮片(herb)还是舌象(tongue)？/ Is this image a herb or a tongue?"
+    field_map: {options: null, answer: category, image: image}
+    inject_options: [herb, tongue]
+    answer_format: text
+    metrics: [mcq_accuracy]
+    # NOTE: visual.parquet is ~730 MB (images embedded). Use --limit, or stream.
