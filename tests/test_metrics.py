@@ -89,6 +89,29 @@ def test_syndrome_chain_tongbing_yizhi_partial_credit():
     assert empty.value == 0.0
 
 
+def test_meridian_acupoint_extraction_and_aliases():
+    s = _sample("本病循足阳明胃经，主穴取足三里、合谷。")
+    sc = _score("meridian_acupoint", s, _pred("取足阳明胃经的足三里，配三阴交。"))
+    assert sc.detail["meridian_f1"] == 1.0                  # 胃经 alias matched
+    assert sc.detail["matched_acupoints"] == ["足三里"]     # 合谷 missed, 三阴交 extra
+    assert 0.0 < sc.detail["acupoint_f1"] < 1.0
+    # explicit gold lists + alias normalization (胃经 -> 足阳明胃经)
+    s2 = Sample(id="x", task_type=TaskType.OPEN_QA, messages=[Message("user", "q")],
+                reference={"meridians": ["胃经"], "acupoints": ["足三里"]})
+    assert _score("meridian_acupoint", s2, _pred("取足三里，属胃经。")).value == 1.0
+
+
+def test_classics_ontology_longest_match_and_recall():
+    s = _sample("此方出自《伤寒论》，理论本于《黄帝内经》。")
+    sc = _score("classics_ontology", s, _pred("该方见于《伤寒论》，并参《金匮要略》。"))
+    assert set(sc.detail["gold_sources"]) == {"伤寒论", "黄帝内经"}   # 内经 not double-counted
+    assert sc.detail["source_f1"] == 0.5 and sc.detail["all_sources_cited"] == 0.0
+    # longest-match: 伤寒杂病论 must NOT also register as 伤寒论
+    s2 = _sample("《伤寒杂病论》")
+    sc2 = _score("classics_ontology", s2, _pred("《伤寒杂病论》为张仲景所著。"))
+    assert sc2.detail["gold_sources"] == ["伤寒杂病论"] and sc2.value == 1.0
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

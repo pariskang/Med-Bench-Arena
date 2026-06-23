@@ -9,5 +9,7 @@ datasets>=2.18
 litellm>=1.40
 # Poe backend (OpenAI-compatible client):
 openai>=1.30
+# Distributed `pool --backend ray` (optional):
+# ray>=2.9
 # Local HF backend (heavy; GPU): install separately as needed
 #   pip install vllm transformers torch peft

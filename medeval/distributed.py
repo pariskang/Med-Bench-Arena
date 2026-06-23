@@ -115,3 +115,140 @@ def run_pool(config_path: str | Path, num_shards: int, gpus: str | None = None,
     if failures:
         raise RuntimeError(f"shards {failures} failed; not merging")
     return merge_results(out)
+
+
+def _load_config(config: str | Path | dict) -> dict:
+    if isinstance(config, dict):
+        return config
+    return yaml.safe_load(Path(config).read_text(encoding="utf-8"))
+
+
+def run_ray(config: str | Path | dict, num_shards: int, num_gpus: float = 0,
+            address: str | None = None, output_dir: str | None = None,
+            limit: int | None = None, cache: bool = True) -> list[dict[str, Any]]:
+    """Distribute shards as Ray tasks (one per shard), then merge.
+
+    Each task runs ``Runner`` with its shard params; assumes a shared filesystem
+    for ``output_dir`` (true on one node or a cluster with shared storage).
+    ``num_gpus`` reserves GPUs per shard for HF/vLLM. Connects to an existing
+    cluster via ``address`` / ``RAY_ADDRESS``, else starts a local Ray.
+    """
+    import copy
+    import ray
+
+    cfg = copy.deepcopy(_load_config(config))
+    cfg.setdefault("run", {})
+    if output_dir:
+        cfg["run"]["output_dir"] = output_dir
+    if limit is not None:
+        for d in cfg.get("datasets", []):
+            d["limit"] = limit
+    cfg["run"]["cache"] = cache
+    out = Path(cfg["run"].get("output_dir", "./results"))
+
+    repo_root = str(Path(__file__).resolve().parents[1])
+    pythonpath = os.pathsep.join(filter(None, [os.environ.get("PYTHONPATH", ""), repo_root]))
+    ray.init(address=address or os.environ.get("RAY_ADDRESS"),
+             ignore_reinit_error=True, configure_logging=False,
+             runtime_env={"env_vars": {"PYTHONPATH": pythonpath}})
+
+    @ray.remote(num_gpus=num_gpus)
+    def _shard_task(c: dict, i: int, n: int) -> dict:
+        from medeval.runner import Runner
+        cc = copy.deepcopy(c)
+        cc["run"]["num_shards"] = n
+        cc["run"]["shard_index"] = i
+        return {"shard": i, "rows": len(Runner(cc).run())}
+
+    try:
+        refs = [_shard_task.remote(cfg, i, num_shards) for i in range(num_shards)]
+        ray.get(refs)
+    finally:
+        ray.shutdown()
+    return merge_results(out)
+
+
+_SBATCH_TEMPLATE = """#!/bin/bash
+#SBATCH --job-name=medeval
+#SBATCH --array=0-{last}{throttle}
+#SBATCH --output={out}/slurm/%A_%a.out
+#SBATCH --cpus-per-task={cpus}
+#SBATCH --time={time}
+{extra_directives}
+set -euo pipefail
+{setup}
+python -m medeval run {config} \\
+    --shard ${{SLURM_ARRAY_TASK_ID}} --num-shards {n} --output {out}{run_args}
+"""
+
+_MERGE_TEMPLATE = """#!/bin/bash
+#SBATCH --job-name=medeval-merge
+#SBATCH --output={out}/slurm/merge_%j.out
+#SBATCH --cpus-per-task=2
+#SBATCH --time=00:30:00
+{merge_directives}
+set -euo pipefail
+{setup}
+python -m medeval merge {out}
+"""
+
+
+def submit_slurm(config: str | Path, num_shards: int, output_dir: str | None = None,
+                 partition: str | None = None, gpus_per_task: int = 0,
+                 cpus_per_task: int = 4, mem: str | None = None, time: str = "04:00:00",
+                 account: str | None = None, setup: str = "", max_parallel: int | None = None,
+                 limit: int | None = None, no_cache: bool = False, submit: bool = True
+                 ) -> dict[str, Any]:
+    """Generate a Slurm **job array** (one task per shard) + a dependent merge job.
+
+    Writes the sbatch scripts under ``<output_dir>/slurm/`` and, if ``submit`` and
+    ``sbatch`` is available, submits the array and a ``afterok`` merge job. With no
+    cluster it just writes the scripts (so you can inspect/submit them yourself).
+    ``setup`` is shell run before the command (e.g. ``module load`` / ``conda activate``).
+    """
+    out = Path(output_dir or (_load_config(config).get("run") or {}).get("output_dir", "./results"))
+    (out / "slurm").mkdir(parents=True, exist_ok=True)
+
+    directives = []
+    if partition:
+        directives.append(f"#SBATCH --partition={partition}")
+    if gpus_per_task:
+        directives.append(f"#SBATCH --gres=gpu:{gpus_per_task}")
+    if mem:
+        directives.append(f"#SBATCH --mem={mem}")
+    if account:
+        directives.append(f"#SBATCH --account={account}")
+    run_args = ""
+    if limit is not None:
+        run_args += f" --limit {limit}"
+    if no_cache:
+        run_args += " --no-cache"
+
+    array_sh = _SBATCH_TEMPLATE.format(
+        last=num_shards - 1, throttle=f"%{max_parallel}" if max_parallel else "",
+        out=out, cpus=cpus_per_task, time=time,
+        extra_directives="\n".join(directives), setup=setup,
+        config=config, n=num_shards, run_args=run_args)
+    merge_sh = _MERGE_TEMPLATE.format(
+        out=out, setup=setup,
+        merge_directives=f"#SBATCH --partition={partition}" if partition else "")
+
+    array_path = out / "slurm" / "medeval_array.sbatch"
+    merge_path = out / "slurm" / "medeval_merge.sbatch"
+    array_path.write_text(array_sh, encoding="utf-8")
+    merge_path.write_text(merge_sh, encoding="utf-8")
+
+    import shutil
+    if submit and shutil.which("sbatch"):
+        jid = subprocess.run(["sbatch", "--parsable", str(array_path)],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        merge = subprocess.run(["sbatch", "--parsable", f"--dependency=afterok:{jid}",
+                                str(merge_path)], capture_output=True, text=True, check=True).stdout.strip()
+        print(f"[medeval] submitted array job {jid} + merge job {merge} (afterok)")
+        return {"array_job": jid, "merge_job": merge,
+                "array_script": str(array_path), "merge_script": str(merge_path)}
+
+    print(f"[medeval] wrote {array_path} and {merge_path}\n"
+          f"          submit with: sbatch {array_path} && "
+          f"sbatch --dependency=afterok:<jobid> {merge_path}")
+    return {"array_script": str(array_path), "merge_script": str(merge_path), "submitted": False}

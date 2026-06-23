@@ -48,7 +48,7 @@ medeval/
 ├── schema.py                  # canonical types
 ├── providers/{base,hf,poe,litellm_provider,mock}.py
 ├── datasets/{base,hf_mcq,local_json,agent_env,tcmbench,medbench,medagentbench_grader}.py
-├── metrics/{base,mcq,llm_judge,text_match,prescription,syndrome}.py
+├── metrics/{base,mcq,llm_judge,text_match,prescription,syndrome,tcm_struct}.py
 ├── runner.py                  # orchestrator
 ├── submit.py                  # OpenCompass / MedBench submission export
 ├── distributed.py             # strided sharding · merge · local pool launcher
@@ -164,6 +164,13 @@ API. **Mode B** (production): serve HF with `vllm serve`, route everything
 - `syndrome_chain` — **证型链结构分** for 辨证: scores the 症状→病机→证型 chain with
   **同病异治 partial credit** (multiple acceptable 证型 → recall-based credit);
   reads `syndrome` / `pathogenesis` / `reference` from the gold.
+- `meridian_acupoint` — **经络腧穴**: set-F1 over canonical meridians (12 正经 + 奇经)
+  and acupoints, with alias normalization (胃经 → 足阳明胃经) — targets the subdomain
+  models are weakest on.
+- `classics_ontology` — **古籍本体**: did the answer ground itself in the correct
+  classical source(s) (《伤寒论》《黄帝内经》…)? Set-F1 + `all_sources_cited`, with
+  longest-match dedup (伤寒杂病论 ≠ 伤寒论). Both lexicons are extensible
+  (`extra_acupoints` / `extra_classics` / `lexicon_file`).
 
 Multiple metrics per dataset are supported — e.g. TCMEval-SDT runs
 `[llm_judge, syndrome_chain, bleu, rouge]` and MTCMB-FRD runs
@@ -209,9 +216,20 @@ python -m medeval run cfg.yaml --shard 1 --num-shards 8 --output /shared/run   #
 python -m medeval merge /shared/run        # -> leaderboard.json + leaderboard.md
 ```
 
+```bash
+# Ray (existing cluster via RAY_ADDRESS, or local), N tasks, GPUs per task:
+python -m medeval pool cfg.yaml --num-shards 8 --backend ray --ray-num-gpus 1
+
+# Slurm: generate + submit a job array (one task per shard) + a dependent merge:
+python -m medeval slurm cfg.yaml --num-shards 64 --partition gpu --gpus-per-task 1 \
+    --max-parallel 16 --setup "conda activate medeval" --output /shared/run
+```
+
 `merge` **re-aggregates the per-sample scores** from every shard (not a
 mean-of-means), so the result is identical to a single full run even when shards
-have unequal sizes. Programmatic: `medeval.run_pool(...)` / `medeval.merge_results(...)`.
+have unequal sizes. Backends: `local` (subprocess pool), `ray` (cluster tasks),
+`slurm` (job array + `afterok` merge). Programmatic: `medeval.run_pool` /
+`medeval.run_ray` / `medeval.submit_slurm` / `medeval.merge_results`.
 
 ## Leaderboard submission (MedBench / OpenCompass)
 
@@ -259,8 +277,7 @@ in YAML.
   have unit tests.
 - Caveats, gating and field maps per dataset: [`DATASETS.md`](DATASETS.md).
 
-Metrics include F1 / ROUGE / BLEU / 方剂结构匹配 / 证型链结构分; MedAgentBench is
-wired to a live FHIR server (built-in grader, official `refsol.py` pluggable);
-results export to OpenCompass / MedBench submission formats; runs distribute via
-strided sharding + merge (`pool` / `merge`). Further extension points: more
-structured metrics and a Ray/Slurm scheduler backend.
+Metrics include F1 / ROUGE / BLEU / 方剂结构匹配 / 证型链结构分 / 经络腧穴 / 古籍本体;
+MedAgentBench is wired to a live FHIR server (built-in grader, official `refsol.py`
+pluggable); results export to OpenCompass / MedBench submission formats; runs
+distribute via strided sharding + merge across **local / Ray / Slurm** backends.
