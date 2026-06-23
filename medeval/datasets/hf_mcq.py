@@ -13,6 +13,7 @@ It normalizes the three option layouts seen in the wild...
 """
 from __future__ import annotations
 
+import json
 import re
 import string
 from typing import Any
@@ -53,6 +54,11 @@ class HFMCQAdapter(DatasetAdapter):
         # dataset's (possibly broken / removed) loading script. e.g. CMB on
         # datasets>=5 errors via the script but loads fine as raw json data_files.
         self.data_files = config.get("data_files")
+        # merge gold from a separate file by a key column (e.g. CMB test answers
+        # live on GitHub keyed by id, joined to the HF question file):
+        #   answer_join: {data_files: <url>, key: id, value: answer}
+        self.answer_join = config.get("answer_join")
+        self._answer_map: dict[str, Any] | None = None
         self.format = config.get("format", "json")
         self.fm = dict(config.get("field_map", {}))
         self.answer_format = config.get("answer_format", "letter")
@@ -78,7 +84,8 @@ class HFMCQAdapter(DatasetAdapter):
         # constant question when the data has no question column (e.g. an
         # image-classification set: TCM-Ladder visual = image + category label)
         self.question_text = config.get("question_text", "")
-        if not self.metrics:
+        if not self.metric_specs:
+            self.metric_specs = [("mcq_accuracy", {})]
             self.metrics = ["mcq_accuracy"]
 
     # --- loading ----------------------------------------------------------
@@ -88,6 +95,8 @@ class HFMCQAdapter(DatasetAdapter):
         if self.image_zip:  # fetch + unzip the images archive once
             from ..assets import ensure_image_base
             self.image_base = ensure_image_base(self.image_zip, self.image_base or None)
+        if self.answer_join:
+            self._answer_map = self._load_answer_map()
         samples: list[Sample] = []
         if self.data_files:  # raw-file mode (json/csv/parquet): single -> "train"
             ds = load_dataset(self.format, data_files=self.data_files,
@@ -107,9 +116,33 @@ class HFMCQAdapter(DatasetAdapter):
                 return samples
         return samples
 
+    def _load_answer_map(self) -> dict[str, Any]:
+        import hashlib
+        import urllib.request
+        from .local_json import CACHE_DIR
+        spec = self.answer_join
+        url = spec["data_files"]
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        h = hashlib.sha256(url.encode()).hexdigest()[:16]
+        dest = CACHE_DIR / f"{self.id}_answers_{h}.json"
+        if not dest.exists():
+            req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
+            with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
+                f.write(r.read())
+        data = json.loads(dest.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            data = data.get("data", list(data.values()))
+        key, val = spec.get("key", "id"), spec.get("value", "answer")
+        return {str(rec[key]): rec[val] for rec in data if key in rec and val in rec}
+
     def _ingest(self, ds, cfg, samples: list[Sample]) -> bool:
         """Append samples from one loaded split; return True if the limit was hit."""
         for i, row in enumerate(ds):
+            if self._answer_map is not None:  # inject joined gold by key
+                row = dict(row)
+                rid = str(row.get(self.answer_join.get("key", "id")))
+                if rid in self._answer_map:
+                    row[self.fm["answer"]] = self._answer_map[rid]
             s = self._row_to_sample(row, cfg, i)
             if s is not None:
                 samples.append(s)

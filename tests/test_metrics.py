@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 
 from medeval import Generation, Message, Prediction, Sample, TaskType, create_metric
+from medeval.datasets.base import _parse_metric_specs
+from medeval.providers.mock import MockProvider
 
 
 def _sample(reference, raw=None, task=TaskType.OPEN_QA):
@@ -124,6 +126,40 @@ def test_classics_ontology_longest_match_and_recall():
     s2 = _sample("《伤寒杂病论》")
     sc2 = _score("classics_ontology", s2, _pred("《伤寒杂病论》为张仲景所著。"))
     assert sc2.detail["gold_sources"] == ["伤寒杂病论"] and sc2.value == 1.0
+
+
+def test_metric_specs_parsing():
+    # plain names, dict form, and a mix all normalize to (name, config)
+    assert _parse_metric_specs(["mcq_accuracy"]) == [("mcq_accuracy", {})]
+    assert _parse_metric_specs([{"name": "llm_judge", "per_criterion": True}]) == \
+        [("llm_judge", {"per_criterion": True})]
+    mixed = _parse_metric_specs(["bleu", {"name": "llm_judge", "per_criterion": True}])
+    assert mixed == [("bleu", {}), ("llm_judge", {"per_criterion": True})]
+    try:
+        _parse_metric_specs([{"per_criterion": True}])   # missing name
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+
+
+def test_healthbench_per_criterion_signed_points():
+    # Faithful HealthBench: one judge call per item, score = Σ(signed met pts) /
+    # Σ(positive pts). The mock judge marks every criterion "met", so a +10 and a
+    # -5 item give achieved = 10 + (-5) = 5 over possible = 10 -> 0.5.
+    rubric = [{"id": "good", "points": 10, "criterion": "covers the key point"},
+              {"id": "bad", "points": -5, "criterion": "contains a dangerous error"}]
+    s = Sample(id="s", task_type=TaskType.OPEN_QA,
+               messages=[Message("user", "What should I do?")],
+               reference={"rubric": rubric})
+    m = create_metric("llm_judge", {"per_criterion": True})
+    assert m.per_criterion is True
+    m.judge = MockProvider({"id": "mock-judge", "behavior": "auto"})
+    sc = asyncio.run(m.score(s, _pred("A safe, complete answer.")))
+    assert sc.detail["style"] == "healthbench"
+    assert sc.detail["achieved"] == 5.0 and sc.detail["possible"] == 10.0
+    assert abs(sc.value - 0.5) < 1e-9
+    # aggregate clips the dataset mean into [0, 1]
+    assert 0.0 <= m.aggregate([sc])["judge_score"] <= 1.0
 
 
 if __name__ == "__main__":

@@ -83,33 +83,40 @@ class LocalJSONAdapter(DatasetAdapter):
         self.image_zip = config.get("image_zip")   # auto download+unzip images archive
         self.image_strip = config.get("image_strip", "")
         self.prompt_template = config.get("prompt_template")
-        if not self.metrics:
+        if not self.metric_specs:
+            self.metric_specs = [("llm_judge", {})]
             self.metrics = ["llm_judge"]
 
     # --- source acquisition ----------------------------------------------
-    def _resolve_file(self) -> Path:
+    def _resolve_files(self) -> list[Path]:
+        """One or more source files. ``source_url`` / ``path`` may be a list (e.g.
+        MedSafetyBench's 9 category CSVs) — they are concatenated."""
         if self.path:
-            return Path(self.path)
-        url = self.source_url
-        if not url and self.hf:
+            paths = self.path if isinstance(self.path, list) else [self.path]
+            return [Path(p) for p in paths]
+        urls = self.source_url
+        if not urls and self.hf:
             repo, fname = self.hf["repo"], self.hf["file"]
             branch = self.hf.get("revision", "main")
-            url = f"https://huggingface.co/datasets/{repo}/resolve/{branch}/{fname}"
-        if not url:
+            urls = f"https://huggingface.co/datasets/{repo}/resolve/{branch}/{fname}"
+        if not urls:
             raise ValueError(f"{self.id}: need source_url, path, or hf")
+        urls = urls if isinstance(urls, list) else [urls]
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        ext = self._infer_ext(url)
-        h = hashlib.sha256(url.encode()).hexdigest()[:16]
-        dest = CACHE_DIR / f"{self.id}_{h}{ext}"
-        if not dest.exists():
-            req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
-            with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
-                f.write(r.read())
-        return dest
+        out: list[Path] = []
+        for url in urls:
+            h = hashlib.sha256(url.encode()).hexdigest()[:16]
+            dest = CACHE_DIR / f"{self.id}_{h}{self._infer_ext(url)}"
+            if not dest.exists():
+                req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
+                with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
+                    f.write(r.read())
+            out.append(dest)
+        return out
 
     def _infer_ext(self, url_or_path: str) -> str:
         low = url_or_path.lower()
-        for ext in (".jsonl", ".json", ".csv", ".tsv"):
+        for ext in (".jsonl", ".json", ".csv", ".tsv", ".parquet"):
             if ext in low:
                 return ext
         return ".json"
@@ -153,7 +160,9 @@ class LocalJSONAdapter(DatasetAdapter):
         if self.image_zip:
             from ..assets import ensure_image_base
             self.image_base = ensure_image_base(self.image_zip, self.image_base or None)
-        records = self._read_records(self._resolve_file())
+        records: list[dict[str, Any]] = []
+        for fp in self._resolve_files():
+            records.extend(self._read_records(fp))
         samples: list[Sample] = []
         for ridx, root in enumerate(records):
             items = self._explode(root)

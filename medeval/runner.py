@@ -198,8 +198,8 @@ class Runner:
     async def _eval(self, prov: ModelProvider, ds, samples) -> dict[str, Any]:
         preds = await self._predict(prov, ds, samples)
         metrics = []
-        for name in ds.metrics:
-            m = create_metric(name)
+        for name, mcfg in ds.metric_specs:
+            m = create_metric(name, mcfg)
             if m.needs_judge:
                 judge = self._judge_for(ds)
                 if judge is None:

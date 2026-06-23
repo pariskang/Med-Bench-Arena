@@ -15,7 +15,9 @@ from typing import Any
 from ..schema import Generation, Message
 from .base import ModelProvider, register_provider
 
-_LETTER_LINE = re.compile(r"^\s*([A-Z])\s*[.):：、]\s*", re.MULTILINE)
+# Recognize option labels in both ASCII and full-width CJK punctuation
+# ("A." / "A)" / "A：" / "A．" / "A、") so Chinese MCQ (CMB/TCMBench/CMExam) parse too.
+_LETTER_LINE = re.compile(r"^\s*([A-Z])\s*[.):：、．]\s*", re.MULTILINE)
 _RUBRIC_ID = re.compile(r"\(id=([^,)]+)")
 
 
@@ -87,6 +89,8 @@ class MockProvider(ModelProvider):
         )
 
     def _judge(self, prompt: str) -> str:
+        if "criteria_met" in prompt:   # HealthBench-style per-criterion grader
+            return json.dumps({"explanation": "mock judge", "criteria_met": True})
         # Award every listed criterion (id=...) — exercises the per-criterion path.
         ids = _RUBRIC_ID.findall(prompt)
         scores = {cid: 1.0 for cid in ids}

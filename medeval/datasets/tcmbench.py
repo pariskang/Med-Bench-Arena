@@ -48,22 +48,25 @@ class TCMBenchAdapter(HFMCQAdapter):
 
     def load(self) -> list[Sample]:
         from pathlib import Path
-        if self.source_url:
-            h = hashlib.sha256(self.source_url.encode()).hexdigest()[:16]
-            fp = _download(self.source_url, CACHE_DIR / f"{self.id}_{h}.json")
-        else:
-            fp = Path(self.local_path)
-        obj = json.loads(fp.read_text(encoding="utf-8"))
-        examples = obj.get("example", obj if isinstance(obj, list) else [])
+        srcs = self.source_url if isinstance(self.source_url, list) else (
+            [self.source_url] if self.source_url else [self.local_path])
         samples: list[Sample] = []
-        for i, rec in enumerate(examples):
-            built = self._build_shared(rec, i) if isinstance(rec.get("question"), list) \
-                else [self._build_flat(rec, i)]
-            for s in built:
-                if s is not None:
-                    samples.append(s)
-                if self.limit and len(samples) >= self.limit:
-                    return samples
+        for si, src in enumerate(srcs):
+            if str(src).startswith(("http://", "https://")):
+                h = hashlib.sha256(str(src).encode()).hexdigest()[:16]
+                fp = _download(str(src), CACHE_DIR / f"{self.id}_{h}.json")
+            else:
+                fp = Path(src)
+            obj = json.loads(fp.read_text(encoding="utf-8"))
+            examples = obj.get("example", obj if isinstance(obj, list) else [])
+            for i, rec in enumerate(examples):
+                built = self._build_shared(rec, f"{si}:{i}") if isinstance(rec.get("question"), list) \
+                    else [self._build_flat(rec, f"{si}:{i}")]
+                for s in built:
+                    if s is not None:
+                        samples.append(s)
+                    if self.limit and len(samples) >= self.limit:
+                        return samples
         return samples
 
     # --- record builders --------------------------------------------------
@@ -95,15 +98,26 @@ class TCMBenchAdapter(HFMCQAdapter):
         return self._make_sample(f"{self.id}:{rec.get('index', i)}", stem, opts, ans)
 
     def _build_shared(self, rec: dict[str, Any], i: int) -> list[Sample | None]:
-        share = str(rec.get("share_content", ""))
+        share = str(rec.get("share_content", "")).strip()
         out: list[Sample | None] = []
         for j, sub in enumerate(rec.get("question", [])):
             subq = str(sub.get("sub_question", ""))
             ans = sub.get("answer", [])
             ans = ans if isinstance(ans, list) else [ans]
-            # options may live in the shared block (B1) or in the sub-question (A3)
-            opt_text = subq if len(self._split_inline(subq)) >= 2 else share
-            stem = f"{share}\n{subq}" if opt_text is share else subq
+            # Split the lettered options off whichever block carries them — the
+            # sub-question (A3 类型) or the shared stem (B1 类型) — so stem and the
+            # option block are disjoint (no double-render, vignette preserved).
+            si = self._first_option_pos(subq)
+            if si > 0:                                   # options embedded in sub-question
+                stem = f"{share}\n{subq[:si]}".strip() if share else subq[:si].strip()
+                opt_text = subq[si:]
+            else:
+                bi = self._first_option_pos(share)
+                if bi > 0:                               # options in the shared block (B1)
+                    stem = f"{share[:bi]}\n{subq}".strip()
+                    opt_text = share[bi:]
+                else:                                    # no parseable options -> skipped downstream
+                    stem, opt_text = f"{share}\n{subq}".strip(), subq
             out.append(self._make_sample(f"{self.id}:{rec.get('index', i)}:{j}",
                                         stem, opt_text, ans))
         return out

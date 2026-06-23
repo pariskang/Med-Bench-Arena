@@ -119,17 +119,17 @@ medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 | MedMCQA | `hf_mcq` | mcq_accuracy | `openlifescienceai/medmcqa` (use **validation**) |
 | PubMedQA | `hf_mcq` | mcq_accuracy | `qiaojin/PubMedQA` / `pqa_labeled` (inject yes/no/maybe) |
 | MMLU-medical | `hf_mcq` | mcq_accuracy | `cais/mmlu` (6 subjects) |
-| CMB | `hf_mcq` | mcq_accuracy | `FreedomIntelligence/CMB` (raw json, **val**, multi) |
+| CMB | `hf_mcq` | mcq_accuracy | `FreedomIntelligence/CMB` (**full test 11,200**, GitHub gold joined by `id`) |
 | CMExam | `hf_mcq` | mcq_accuracy | `williamliujl/CMExam` CSV (inline options, multi) |
-| TCMBench | `tcmbench` | mcq_accuracy | `ywjawmw/TCMBench` `data_demo/` (embedded options) |
-| HealthBench | `local_json` | llm_judge | OpenAI simple-evals JSONL (signed-points rubric) |
+| TCMBench | `tcmbench` | mcq_accuracy | `ywjawmw/TCMBench` **all 14 `data_demo/` files** → 20 MCQ (full bank gated) |
+| HealthBench | `local_json` | llm_judge (`per_criterion`) | OpenAI simple-evals JSONL, **3 variants**; faithful per-rubric grading (judge: GPT-4.1) |
 | LLMEval-Med | `local_json` | llm_judge | `llmeval/LLMEval-Med` (checklist rubric) |
 | TCMEval-SDT | `local_json` (sdt) | llm_judge | `zhuyan166/TCMEval` (**Train** has gold) |
 | MTCMB (方剂/安全) | `local_json` | llm_judge | `Wayyuanyuan/MTCMB` 12 JSONL |
 | CSEDB | `local_json` (safety) | llm_judge | public 2-record sample; **full bank gated** |
-| MedSafetyBench | `local_json` (safety) | llm_judge | `AI4LIFE-GROUP/med-safety-bench` CSV |
-| AgentClinic | `agentclinic` | pass_k | `SamuelSchmidgall/AgentClinic` JSONL (offline-capable) |
-| MedAgentBench | `medagentbench` | pass_k | live FHIR (Docker); built-in grader (+ optional `refsol.py`) |
+| MedSafetyBench | `local_json` (safety) | llm_judge | `AI4LIFE-GROUP/med-safety-bench` **all 18 CSV** (9 AMA categories × {gpt4,llama2}) |
+| AgentClinic | `agentclinic` | pass_k | `SamuelSchmidgall/AgentClinic` MedQA **214** + NEJM **120**; LLM-agent `support:` (offline fallback) |
+| MedAgentBench | `medagentbench` | pass_k | live FHIR (Docker); **per-task payload grader** (+ optional gated `refsol.py`) |
 
 **Not wirable config-only** (documented in `DATASETS.md`): **MLEC-QA** (Google-Drive
 sign-in), **TCM-3CEval** (MedBench submission, held-out answers),
@@ -200,10 +200,14 @@ The patient is scripted (most-relevant fact) offline, or an LLM via `support:`.
 
 **MedAgentBench** is fully wired to a **real FHIR server**: the agent emits
 `GET <url>` / `POST <url>\n<json>` / `FINISH([...])` (faithful to the upstream
-harness — GET appends `&_format=json`, POST writes live), and scoring uses a
-**built-in grader** (query tasks exact vs. gold `sol`; action tasks verify the
-write landed for `eval_MRN`) or the **official gated `refsol.py`** if you set
-`refsol_path` (called exactly as `getattr(refsol, task_id)(task, answer, base)`).
+harness — GET appends `&_format=json`, POST writes live), and scoring uses the
+**official gated `refsol.py`** when you set `refsol_path` (called exactly as
+`getattr(refsol, task_id)(task, answer, base)`), or a **built-in per-task grader**
+that dispatches on the task id and validates the POST **payload** — expected
+`resourceType` + `subject → Patient/{eval_MRN}` + the right code (flowsheet/SNOMED/
+NDC/LOINC), with query tasks required to issue no write. It is conservative (never a
+false pass): anything needing a live-FHIR gold (query values, conditional no-ops) is
+flagged for `refsol_path`.
 Start the EHR server first:
 
 ```bash
@@ -223,8 +227,10 @@ constant prompt for image-classification sets without a question column.
 
 **TCM-Ladder** (`timzzyus/TCM-Ladder`, CC-BY-4.0, open) is wired in
 `configs/example_tcm_ladder.yaml`: the 12,778-item bilingual text MCQ set works
-as-is, and the tongue/herb `visual.parquet` (raw JPEG bytes) drives the
-bytes→data-URL→vision pipeline. Pair image 舌象 tasks with the `tongue_pulse` metric.
+as-is, and the 8,802-item `visual.parquet` is scored **faithfully** — each row is a
+**pre-rendered 4-option MCQ image** (question + options + A/B/C/D labels baked in),
+gold `answer` is the letter, so it runs as image→letter (`inject_options: [A,B,C,D]`,
+`answer_format: letter`) through the bytes→data-URL→vision pipeline.
 
 For sets whose images ship as a separate `images.zip` (OmniMedVQA, PMC-VQA,
 MedXpertQA-MM, TCM-Vision-Benchmark, …), set `image_zip:` (the archive URL) and

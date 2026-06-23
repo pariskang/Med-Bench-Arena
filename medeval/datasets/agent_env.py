@@ -80,7 +80,8 @@ class AgentAdapter(DatasetAdapter):
         super().__init__(config)
         self.max_turns = int(config.get("max_turns", 20))
         self.k = int(config.get("k", config.get("pass_k", 1)))
-        if not self.metrics:
+        if not self.metric_specs:
+            self.metric_specs = [("pass_k", {})]
             self.metrics = ["pass_k"]
 
     @abc.abstractmethod
@@ -206,16 +207,26 @@ class DemoAgentAdapter(AgentAdapter):
 # 2) AgentClinic wrapper (offline-capable)
 # ===========================================================================
 class AgentClinicEnv(AgentEnvironment):
-    """One AgentClinic episode (MedQA variant). Patient/measurement/moderator run
-    rule-based by default (offline); pass LLM providers in ``support`` to use the
-    real LLM-backed agents."""
+    """One AgentClinic episode — MedQA (OSCE) **or** NEJM (image-case) schema.
+    Patient/measurement/moderator run rule-based by default (offline); pass LLM
+    providers in ``support`` to use the real LLM-backed agents (the original setup)."""
 
     def __init__(self, scenario: dict[str, Any], max_turns: int = 20,
-                 support: Optional[dict] = None):
-        self.osce = scenario.get("OSCE_Examination", scenario)
+                 support: Optional[dict] = None, variant: str = "medqa"):
         self.max_turns = max_turns
         self.support = support or {}
         self.turns_left = max_turns
+        self.nejm = variant == "nejm" or ("answers" in scenario and "OSCE_Examination" not in scenario)
+        if self.nejm:
+            self.osce = {}
+            self.nejm_rec = scenario
+            self.objective = scenario.get("question", "Determine the most likely diagnosis.")
+            self.correct = next((a.get("text", "") for a in scenario.get("answers", [])
+                                 if a.get("correct")), "")
+        else:
+            self.osce = scenario.get("OSCE_Examination", scenario)
+            self.objective = self.osce.get("Objective_for_Doctor", "Assess and diagnose the patient.")
+            self.correct = self.osce.get("Correct_Diagnosis", "")
 
     def doctor_instructions(self) -> str:
         return (
@@ -227,18 +238,16 @@ class AgentClinicEnv(AgentEnvironment):
         )
 
     async def reset(self) -> str:
-        obj = self.osce.get("Objective_for_Doctor", "Assess and diagnose the patient.")
-        return f"Objective: {obj}\nThe patient is in front of you. Begin."
+        return f"Objective: {self.objective}\nThe patient is in front of you. Begin."
 
     async def step(self, action: str):
         self.turns_left -= 1
         up = action.upper()
         if "DIAGNOSIS READY" in up:
             dx = action.split(":", 1)[-1].strip() if ":" in action else action
-            correct = self.osce.get("Correct_Diagnosis", "")
-            success = await self._moderate(dx, correct)
+            success = await self._moderate(dx, self.correct)
             return ("", 1.0 if success else 0.0, True,
-                    {"success": success, "diagnosis": dx, "correct": correct})
+                    {"success": success, "diagnosis": dx, "correct": self.correct})
         done = self.turns_left <= 0
         if "REQUEST TEST" in up or "REQUEST IMAGES" in up:
             obs = self._measurement(action)
@@ -249,6 +258,15 @@ class AgentClinicEnv(AgentEnvironment):
     # --- patient / measurement / moderator -------------------------------
     async def _patient(self, action: str) -> str:
         prov = self.support.get("patient")
+        if self.nejm:  # flat NEJM record: patient_info string
+            info = str(self.nejm_rec.get("patient_info", ""))
+            if prov is not None:
+                g = await prov.agenerate(
+                    [Message("system", "You are the patient. Answer in 1-3 sentences without "
+                             "naming your diagnosis. Your background: " + info),
+                     Message("user", action)], temperature=0.7, max_tokens=128)
+                return g.text
+            return info[:400] or "I'm not feeling well, doctor."
         actor = self.osce.get("Patient_Actor", {})
         if prov is not None:
             sys = ("You are a patient. Reveal only symptoms you have in 1-3 sentences; "
@@ -267,6 +285,9 @@ class AgentClinicEnv(AgentEnvironment):
         return text[:400] or "I just don't feel well, doctor."
 
     def _measurement(self, action: str) -> str:
+        if self.nejm:  # flat NEJM record: physical_exams string
+            pe = str(self.nejm_rec.get("physical_exams", ""))
+            return f"RESULTS: {pe}" if pe else "RESULTS: NORMAL READINGS"
         results = self.osce.get("Test_Results", {})
         req = action.split(":", 1)[-1].strip().lower() if ":" in action else ""
         flat = self._flatten(results)
@@ -332,7 +353,8 @@ class AgentClinicAdapter(AgentAdapter):
         return out
 
     def make_env(self, sample: Sample, support=None) -> AgentEnvironment:
-        return AgentClinicEnv(sample.env_spec, max_turns=self.max_turns, support=support)
+        return AgentClinicEnv(sample.env_spec, max_turns=self.max_turns,
+                              support=support, variant=self.variant)
 
 
 # ===========================================================================

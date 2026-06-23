@@ -37,9 +37,28 @@ datasets:
     answer_format: multi
     metrics: [mcq_accuracy]
 
+  # TCMBench (ywjawmw/TCMBench, arXiv:2406.01126) — the repo publishes a per-type
+  # *demo* set under data_demo/ (one worked example per question type across all
+  # three difficulty levels; A1/A2 flat + A3/B1 shared-stem). We wire ALL 14 demo
+  # files (first/second/third level) -> 20 MCQ items. The full 5,473-question bank
+  # is gated (request from the authors); drop its path(s) in here to score it.
   - id: tcmbench
     adapter: tcmbench
-    source_url: https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SDT.json
+    source_url:
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/CVR.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/FKU.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/KHC.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/CBF.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/DDST.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/PF.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SCF.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SDDT.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SDT.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/DDST_hard.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDDT_hard.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDT_reverse.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDT_shuffle.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/herb_predict.json
     metrics: [mcq_accuracy]
 
   # --- syndrome differentiation 辨证 (judged on the 症状–病机–证型 chain) ---

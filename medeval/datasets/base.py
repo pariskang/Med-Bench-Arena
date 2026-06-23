@@ -37,6 +37,25 @@ def available_adapters() -> list[str]:
     return sorted(_REGISTRY)
 
 
+def _parse_metric_specs(raw: Any) -> list[tuple[str, dict[str, Any]]]:
+    """Normalize a ``metrics:`` list into ``[(name, config), ...]``. Entries may be
+    plain strings (``llm_judge``) or dicts carrying that metric's config
+    (``{name: llm_judge, per_criterion: true}``)."""
+    out: list[tuple[str, dict[str, Any]]] = []
+    for m in raw or []:
+        if isinstance(m, str):
+            out.append((m, {}))
+        elif isinstance(m, dict):
+            name = m.get("name") or m.get("metric")
+            if not name:
+                raise ValueError(f"metric spec {m!r} needs a 'name' key")
+            out.append((name, {k: v for k, v in m.items()
+                               if k not in ("name", "metric")}))
+        else:
+            raise ValueError(f"invalid metric spec {m!r} (want str or dict)")
+    return out
+
+
 class DatasetAdapter(abc.ABC):
     """Abstract dataset adapter."""
 
@@ -46,8 +65,13 @@ class DatasetAdapter(abc.ABC):
         self.config = config
         self.id: str = config.get("id", self.adapter_name)
         self.limit: int | None = config.get("limit")
-        # metrics requested for this dataset (names resolved by the runner)
-        self.metrics: list[str] = list(config.get("metrics", []))
+        # metrics requested for this dataset. Each entry may be a plain name
+        # ("llm_judge") or a dict carrying that metric's config
+        # ({name: llm_judge, per_criterion: true}). ``metric_specs`` keeps
+        # (name, config); ``metrics`` keeps just the names (back-compat).
+        self.metric_specs: list[tuple[str, dict[str, Any]]] = _parse_metric_specs(
+            config.get("metrics", []))
+        self.metrics: list[str] = [n for n, _ in self.metric_specs]
         # optional per-dataset judge override (model id) for llm_judge
         self.judge: str | None = config.get("judge")
 
