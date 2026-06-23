@@ -22,6 +22,7 @@ import abc
 import hashlib
 import json
 import re
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Optional
@@ -337,86 +338,159 @@ class AgentClinicAdapter(AgentAdapter):
 # ===========================================================================
 # 3) MedAgentBench scaffold (requires FHIR server + gated grader)
 # ===========================================================================
+def fhir_request(url: str, method: str = "GET", body: dict | None = None,
+                 timeout: int = 30) -> tuple[int, Any]:
+    """Real HTTP call to a FHIR server (stdlib only). Returns (status, data)."""
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    headers = {"User-Agent": "medeval/1.0", "Accept": "application/fhir+json, application/json"}
+    if data is not None:
+        headers["Content-Type"] = "application/fhir+json"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", "ignore")
+            status = getattr(r, "status", r.getcode())
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "ignore")
+        status = e.code
+    except Exception as e:
+        return 0, f"(FHIR server unreachable: {e})"
+    try:
+        return status, json.loads(raw)
+    except Exception:
+        return status, raw
+
+
 class MedAgentBenchEnv(AgentEnvironment):
-    """FHIR virtual-EHR episode. Actions: 'GET <url>', 'POST <url>\\n<json>',
-    'FINISH([...])'. Requires a running HAPI-FHIR server (Docker) at ``fhir_base``
-    and the official ``refsol.py`` grader to score; without them, GET/POST are
-    inert and reward is 0 (loop still exercised)."""
+    """One FHIR virtual-EHR episode. Faithful to the official harness: the doctor
+    emits exactly one of ``GET <url>`` / ``POST <url>\\n<json>`` / ``FINISH([...])``;
+    GET appends ``&_format=json``; POST writes to the live FHIR server. Scoring is
+    done by the official ``refsol`` (if provided) or the built-in grader."""
 
     def __init__(self, task: dict[str, Any], fhir_base: str, max_rounds: int = 8,
-                 grader=None):
+                 funcs: list | None = None, grader=None, refsol=None):
         self.task = task
         self.fhir_base = fhir_base.rstrip("/")
         self.rounds_left = max_rounds
-        self.grader = grader
+        self.funcs = funcs or []
+        self.grader = grader            # optional callable(task, answer, base, posts)
+        self.refsol = refsol            # optional official refsol module
         self.posts: list[dict] = []
+        self.history: list[dict] = []
 
     def doctor_instructions(self) -> str:
+        if self.funcs:
+            cat = "\n".join(f"  - {f.get('name')}" for f in self.funcs)
+        else:
+            cat = ("  - GET/POST FHIR resources "
+                   "(Patient, Observation, Condition, MedicationRequest, ServiceRequest, Procedure)")
         return (
-            "You are using FHIR REST calls to complete the task. Each turn output "
-            "exactly ONE of:\n"
-            "  GET <url>?param=value\n  POST <url>\\n<json-body>\n  FINISH([<answers>])\n"
-            "Output no other text."
+            "You are an expert using FHIR REST APIs to assist a clinician. "
+            f"FHIR base URL: {self.fhir_base}\n"
+            "Available endpoints:\n" + cat + "\n\n"
+            "Each turn output EXACTLY ONE of these, with no other text:\n"
+            "  GET <url>?param=value\n"
+            "  POST <url>\n<JSON body>\n"
+            "  FINISH([<answer1>, <answer2>, ...])"
         )
 
     async def reset(self) -> str:
-        ctx = self.task.get("context", "")
-        return f"{self.task.get('instruction','')}\n{ctx}\nFHIR base: {self.fhir_base}".strip()
+        q = f"{self.task.get('instruction', '')}\n{self.task.get('context', '')}".strip()
+        self.history.append({"role": "user", "content": q})
+        return q
 
     async def step(self, action: str):
         self.rounds_left -= 1
-        a = action.strip()
+        a = (action or "").strip()
+        self.history.append({"role": "assistant", "content": a})
         done = self.rounds_left <= 0
         if a.startswith("FINISH("):
-            result = a[len("FINISH("):-1] if a.endswith(")") else a[len("FINISH("):]
-            success = self._grade(result)
-            return ("", 1.0 if success else 0.0, True,
-                    {"success": success, "result": result})
+            inner = a[len("FINISH("):]
+            inner = inner[:-1] if inner.endswith(")") else inner
+            return self._finish(inner)
         if a.startswith("GET"):
-            return (self._fhir_get(a[3:].strip()), 0.0, done, {})
-        if a.startswith("POST"):
-            return (self._fhir_post(a[4:].strip()), 0.0, done, {})
-        return ("Invalid action. Use GET / POST / FINISH(...).", 0.0, done, {})
+            obs = self._do_get(a[3:].strip())
+        elif a.startswith("POST"):
+            obs = self._do_post(a[4:].strip())
+        else:
+            obs = "Invalid action. Use 'GET <url>', 'POST <url>\\n<json>', or 'FINISH([...])'."
+        self.history.append({"role": "user", "content": obs})
+        return (obs, 0.0, done, {"success": False} if done else {})
 
-    def _grade(self, result: str) -> bool:
-        if self.grader is None:
-            return False  # refsol.py not provided; cannot score
+    def _do_get(self, q: str) -> str:
+        q = q.replace(" ", "%20")  # tolerate raw spaces in model-emitted URLs
+        url = f"{self.fhir_base}/{q}" + ("&" if "?" in q else "?") + "_format=json"
+        _, data = fhir_request(url, "GET")
+        body = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+        return f"Here is the response from the GET request:\n{body[:6000]}"
+
+    def _do_post(self, rest: str) -> str:
+        head, _, body_text = rest.partition("\n")
         try:
-            return bool(self.grader(self.task, result, self.fhir_base))
+            body = json.loads(body_text)
         except Exception:
-            return False
+            self.posts.append({"path": head.strip(), "status": 0, "body": body_text, "ok": False})
+            return "Invalid POST request"
+        status, resp = fhir_request(f"{self.fhir_base}/{head.strip().lstrip('/')}", "POST", body)
+        self.posts.append({"path": head.strip(), "status": status, "body": body, "response": resp})
+        if 200 <= status < 300:
+            return "POST request accepted and executed successfully. The resource has been created."
+        return f"POST request failed (status {status})."
 
-    def _fhir_get(self, q: str) -> str:
-        try:
-            url = f"{self.fhir_base}/{q}" + ("&" if "?" in q else "?") + "_format=json"
-            req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
-            with urllib.request.urlopen(req, timeout=30) as r:
-                return r.read(8000).decode("utf-8", "ignore")
-        except Exception as e:
-            return f"(FHIR server unreachable: {e})"
-
-    def _fhir_post(self, body: str) -> str:
-        self.posts.append({"body": body})
-        return "POST recorded."
+    def _finish(self, inner: str):
+        from .medagentbench_grader import parse_finish, builtin_grade, grade_with_refsol
+        answer = parse_finish(inner)
+        if self.refsol is not None:
+            success, detail = grade_with_refsol(self.refsol, self.task, answer, self.fhir_base)
+        elif self.grader is not None:
+            success, detail = self.grader(self.task, answer, self.fhir_base, self.posts)
+        else:
+            success, detail = builtin_grade(self.task, answer, self.fhir_base, self.posts)
+        detail.update({"success": success, "answer": answer, "n_posts": len(self.posts)})
+        return ("", 1.0 if success else 0.0, True, detail)
 
 
 @register_dataset("medagentbench")
 class MedAgentBenchAdapter(AgentAdapter):
     """config:
-      source_url:  test_data_v2.json (Stanford MedAgentBench)
+      source_url:  test_data_v2.json (Stanford MedAgentBench); 300 tasks
+      funcs_url:   funcs_v1.json (FHIR tool catalog) injected into the prompt
       fhir_base:   running HAPI-FHIR base URL (default http://localhost:8080/fhir)
       max_turns:   rounds (paper: 8; repo config: 5)
-    Requires Docker FHIR server + gated refsol.py grader to actually score.
+      refsol_path: path to the official (gated) refsol.py grader; if omitted the
+                   built-in grader is used (query tasks exact; action tasks approx)
+
+    Needs a running FHIR server (Docker image jyxsu6/medagentbench on :8080) to
+    actually exercise GET/POST. See the README for the docker command.
     """
 
     DEFAULT_URL = ("https://raw.githubusercontent.com/stanfordmlgroup/"
                    "MedAgentBench/main/data/medagentbench/test_data_v2.json")
+    FUNCS_URL = ("https://raw.githubusercontent.com/stanfordmlgroup/"
+                 "MedAgentBench/main/data/medagentbench/funcs_v1.json")
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.source_url = config.get("source_url", self.DEFAULT_URL)
+        self.funcs_url = config.get("funcs_url", self.FUNCS_URL)
         self.fhir_base = config.get("fhir_base", "http://localhost:8080/fhir")
         self.max_turns = int(config.get("max_turns", 8))
+        self.refsol_path = config.get("refsol_path")
+        self._funcs: list | None = None
+        self._refsol = None
+        if self.refsol_path:
+            from .medagentbench_grader import load_refsol
+            self._refsol = load_refsol(self.refsol_path)
+
+    def _load_funcs(self) -> list:
+        if self._funcs is None:
+            try:
+                h = hashlib.sha256(self.funcs_url.encode()).hexdigest()[:16]
+                fp = _download(self.funcs_url, CACHE_DIR / f"{self.id}_funcs_{h}.json")
+                self._funcs = json.loads(fp.read_text(encoding="utf-8"))
+            except Exception:
+                self._funcs = []
+        return self._funcs
 
     def load(self) -> list[Sample]:
         h = hashlib.sha256(self.source_url.encode()).hexdigest()[:16]
@@ -424,6 +498,7 @@ class MedAgentBenchAdapter(AgentAdapter):
         data = json.loads(fp.read_text(encoding="utf-8"))
         if isinstance(data, dict):
             data = data.get("data", list(data.values()))
+        self._load_funcs()
         out = []
         for i, rec in enumerate(self._truncate(data)):
             out.append(Sample(id=f"{self.id}:{rec.get('id', i)}",
@@ -432,5 +507,5 @@ class MedAgentBenchAdapter(AgentAdapter):
 
     def make_env(self, sample: Sample, support=None) -> AgentEnvironment:
         grader = (support or {}).get("grader")
-        return MedAgentBenchEnv(sample.env_spec, self.fhir_base,
-                                max_rounds=self.max_turns, grader=grader)
+        return MedAgentBenchEnv(sample.env_spec, self.fhir_base, max_rounds=self.max_turns,
+                                funcs=self._funcs or [], grader=grader, refsol=self._refsol)

@@ -178,15 +178,32 @@ messages), an optional `rubric` (normalized from many shapes), `reference`, and 
   pass `support: {patient: <id>, moderator: <id>}` to use LLM agents.
 - 🔒 **AgentClinic-MIMIC-IV** needs PhysioNet credentialing (not redistributable).
 
-### MedAgentBench ⚠️ (server + grader required)
-- **Source:** `stanfordmlgroup/MedAgentBench` (on the AgentBench harness).
+### MedAgentBench ⚠️ (live FHIR server required) — wired
+- **Source:** `stanfordmlgroup/MedAgentBench` (300 tasks, 10 categories).
   `data/medagentbench/test_data_v2.json` (`{id, instruction, context, sol, eval_MRN}`),
-  `funcs_v1.json` = FHIR tool catalog. **Actions:** `GET <url>` / `POST <url>\n<json>` /
-  `FINISH([...])`; 8 rounds (paper) / 5 (repo config). **Metric: pass@1** (the paper
-  explicitly avoids pass^k for healthcare).
-- **Not self-contained:** needs (1) a running **HAPI-FHIR Docker** server on `:8080` and
-  (2) the **gated `refsol.py`** grader (Box link). The `medagentbench` adapter wraps the
-  GET/POST/FINISH loop; supply `grader=` to score.
+  `funcs_v1.json` = FHIR tool catalog (injected into the system prompt).
+- **Actions (faithful to the harness):** `GET <url>` (we append `&_format=json`), `POST
+  <url>\n<json>` (we parse the JSON after line 1 and **write it to the live server**),
+  `FINISH([...])` (extract `r[7:-1]`). 8 rounds (paper) / 5 (repo). **Metric: pass@1**
+  (the paper explicitly avoids pass^k for healthcare).
+- **Grading:** `eval(case_data, results, fhir_api_base)` →
+  `getattr(refsol, case_data['id'].split('_')[0])`. We implement this exactly:
+  - **built-in grader** (default, no gated file): query tasks (have `sol`) compare the
+    `FINISH` answer to gold (string-set + numeric tolerance); action tasks verify a 2xx
+    write referencing `eval_MRN` landed (a documented approximation of the per-task rules).
+  - **official `refsol.py`** (gated, project Box link): set `refsol_path:` and it is called
+    as `getattr(refsol, task_id)(task, answer, fhir_base)`.
+- **Run it:** start the FHIR server, then point `fhir_base` at it:
+  ```bash
+  docker pull jyxsu6/medagentbench:latest
+  docker run -p 8080:8080 jyxsu6/medagentbench:latest   # :8080/fhir, 100 patients preloaded
+  ```
+  ```yaml
+  {adapter: medagentbench, fhir_base: http://localhost:8080/fhir, max_turns: 8,
+   metrics: [pass_k], k: 1}   # optional: refsol_path: /path/to/refsol.py
+  ```
+- The GET/POST/FINISH loop + both grader paths are validated offline against an in-process
+  mock FHIR server (`tests/test_medagentbench.py`).
 
 ---
 

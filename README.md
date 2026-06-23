@@ -47,8 +47,8 @@ any one can be swapped or extended in isolation.
 medeval/
 ├── schema.py                  # canonical types
 ├── providers/{base,hf,poe,litellm_provider,mock}.py
-├── datasets/{base,hf_mcq,local_json,agent_env,tcmbench}.py
-├── metrics/{base,mcq,llm_judge}.py
+├── datasets/{base,hf_mcq,local_json,agent_env,tcmbench,medagentbench_grader}.py
+├── metrics/{base,mcq,llm_judge,text_match,prescription}.py
 ├── runner.py                  # orchestrator
 └── cli.py                     # python -m medeval run config.yaml
 ```
@@ -121,7 +121,7 @@ medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 | CSEDB | `local_json` (safety) | llm_judge | public 2-record sample; **full bank gated** |
 | MedSafetyBench | `local_json` (safety) | llm_judge | `AI4LIFE-GROUP/med-safety-bench` CSV |
 | AgentClinic | `agentclinic` | pass_k | `SamuelSchmidgall/AgentClinic` JSONL (offline-capable) |
-| MedAgentBench | `medagentbench` | pass_k | needs FHIR Docker + gated `refsol.py` |
+| MedAgentBench | `medagentbench` | pass_k | live FHIR (Docker); built-in grader (+ optional `refsol.py`) |
 
 **Not wirable config-only** (documented in `DATASETS.md`): **MLEC-QA** (Google-Drive
 sign-in), **TCM-3CEval** (MedBench submission, held-out answers),
@@ -152,15 +152,38 @@ API. **Mode B** (production): serve HF with `vllm serve`, route everything
   (open_qa / **sdt 证型链** / **prescription 方剂** / **safety 安全**). Signed
   points are honored (HealthBench-style). Mark a model `judge_only: true` to use
   it as a judge without ranking it.
+- `f1` / `rouge` — token-overlap vs. a reference answer; **CJK-aware** tokenization
+  (char-level for Chinese, word-level for Latin, `jieba` if installed). ROUGE
+  reports 1/2/L.
+- `prescription_match` — **方剂结构匹配**: herb-set precision/recall/F1 (君臣佐使) +
+  formula-name match + 治法 overlap, read from the structured gold (e.g. the
+  MTCMB TCM-FRD `{治法, 方剂, 药物组成}` dict); herb names normalized (dosages
+  stripped).
+
+Multiple metrics per dataset are supported — e.g. TCMEval-SDT runs
+`[llm_judge, f1, rouge]` and MTCMB-FRD runs `[llm_judge, prescription_match]`.
 
 ## Agents
 
 The doctor agent runs the same `ModelProvider` policy inside an
 `AgentEnvironment(reset/step)` loop. **AgentClinic** is wired and runs **offline**
 (patient / measurement / moderator default to rule-based from the scenario; pass
-`support:` to use LLM agents). **MedAgentBench** is scaffolded (GET/POST/FINISH
-against a FHIR base) — it needs a running HAPI-FHIR Docker server and the gated
-`refsol.py` grader to score.
+`support:` to use LLM agents).
+
+**MedAgentBench** is fully wired to a **real FHIR server**: the agent emits
+`GET <url>` / `POST <url>\n<json>` / `FINISH([...])` (faithful to the upstream
+harness — GET appends `&_format=json`, POST writes live), and scoring uses a
+**built-in grader** (query tasks exact vs. gold `sol`; action tasks verify the
+write landed for `eval_MRN`) or the **official gated `refsol.py`** if you set
+`refsol_path` (called exactly as `getattr(refsol, task_id)(task, answer, base)`).
+Start the EHR server first:
+
+```bash
+docker pull jyxsu6/medagentbench:latest
+docker run -p 8080:8080 jyxsu6/medagentbench:latest      # serves :8080/fhir
+curl http://localhost:8080/fhir/metadata                 # verify
+python -m medeval run configs/example_medagentbench.yaml --limit 10
+```
 
 ## Extending
 
@@ -185,6 +208,7 @@ in YAML.
   have unit tests.
 - Caveats, gating and field maps per dataset: [`DATASETS.md`](DATASETS.md).
 
-Production extension points: more metrics (F1 / ROUGE / 方剂 structure match), the
-live MedAgentBench FHIR grader, distributed scheduling, and MedBench / OpenCompass
-leaderboard submission.
+Metrics now include F1 / ROUGE / 方剂 structure match; MedAgentBench is wired to a
+live FHIR server with a built-in grader (official `refsol.py` pluggable). Further
+extension points: distributed scheduling and MedBench / OpenCompass leaderboard
+submission.

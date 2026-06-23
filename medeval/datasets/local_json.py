@@ -174,7 +174,8 @@ class LocalJSONAdapter(DatasetAdapter):
             return None
 
         rubric = self._normalize_rubric(self._resolve(self.fm.get("rubric"), root, item))
-        reference = self._stringify_ref(self._resolve(self.fm.get("reference"), root, item))
+        raw_ref = self._resolve(self.fm.get("reference"), root, item)
+        reference = self._stringify_ref(raw_ref)
         label = self._resolve(self.fm.get("label"), root, item)
 
         ref_dict: dict[str, Any] = {}
@@ -182,6 +183,8 @@ class LocalJSONAdapter(DatasetAdapter):
             ref_dict["rubric"] = rubric
         if reference:
             ref_dict["reference"] = reference
+        if isinstance(raw_ref, (dict, list)):
+            ref_dict["reference_raw"] = raw_ref   # structured form (e.g. 方剂 dict)
         if label is not None:
             ref_dict["label"] = label
             if self.task == TaskType.SDT:

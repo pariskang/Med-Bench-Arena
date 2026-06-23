@@ -48,7 +48,7 @@ datasets:
     task: sdt                    # -> default 证型链 rubric (with 同病异治 partial credit)
     source_url: https://raw.githubusercontent.com/zhuyan166/TCMEval/main/evaluation/TCMEval-SDT/data/Train_TCM_Data_v1.json
     field_map: {prompt: "Clinical Data", reference: "Syndrome Differentiation", label: "TCM Syndrome"}
-    metrics: [llm_judge]
+    metrics: [llm_judge, f1, rouge]   # rubric judge + token-overlap vs the gold 辨证
 
   # --- prescription 方剂生成 ---
   - id: mtcmb_frd
@@ -56,7 +56,7 @@ datasets:
     task: prescription           # -> default 方剂 rubric (君臣佐使 + 配伍禁忌)
     source_url: https://raw.githubusercontent.com/Wayyuanyuan/MTCMB/main/data/10.TCM_FRD.jsonl
     field_map: {prompt: question, reference: answer}
-    metrics: [llm_judge]
+    metrics: [llm_judge, prescription_match]   # rubric judge + 君臣佐使 herb-set F1
 
   # --- safety 安全 ---
   - id: mtcmb_safety
