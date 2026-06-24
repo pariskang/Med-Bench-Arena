@@ -59,25 +59,50 @@ def headline(agg: dict[str, Any]) -> tuple[str, float]:
     return "score", 0.0
 
 
+_INTERNAL_NOTE = (
+    "> ⚠️ **Not comparable to official leaderboards.** These runs use a "
+    "validation/dev split, a tiny demo subset, a small public sample, a gated "
+    "partial set, or a built-in (approximate) grader — see each section's "
+    "`split_type`. Reported for internal tracking only; do **not** publish them "
+    "as official scores.")
+
+
+def _leaderboard_section(subset: list[dict[str, Any]]) -> list[str]:
+    """Per-dataset ranked tables for one comparability tier."""
+    by_ds: dict[str, list] = {}
+    for r in subset:
+        by_ds.setdefault(r["dataset"], []).append(r)
+    out: list[str] = []
+    for dsid, rs in by_ds.items():
+        st = rs[0].get("split_type", "official")
+        tag = "" if st == "official" else f"  ·  `split_type: {st}`"
+        out += [f"### {dsid}{tag}", "",
+                "| Model | Score | Metric | n | Cost (USD) |",
+                "|---|---|---|---|---|"]
+        for r in sorted(rs, key=lambda r: headline(r["metrics"])[1], reverse=True):
+            key, val = headline(r["metrics"])
+            out.append(f"| {r['model']} | {val:.4f} | {key} | {r['n']} | "
+                       f"{r.get('model_cost_usd', 0.0):.4f} |")
+        out.append("")
+    return out
+
+
 def write_leaderboard(rows: list[dict[str, Any]], output_dir: Path) -> None:
-    """Write leaderboard.json + leaderboard.md for a set of result rows."""
+    """Write leaderboard.json + leaderboard.md, keeping **officially-comparable**
+    runs (``split_type == official``) in a separate section from internal ones."""
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "leaderboard.json").write_text(
         json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    by_ds: dict[str, list] = {}
-    for r in rows:
-        by_ds.setdefault(r["dataset"], []).append(r)
+
+    official = [r for r in rows if r.get("split_type", "official") == "official"]
+    internal = [r for r in rows if r.get("split_type", "official") != "official"]
     lines = ["# MedEval Leaderboard", ""]
-    for dsid, rs in by_ds.items():
-        lines += [f"## {dsid}", "",
-                  "| Model | Score | Metric | n | Cost (USD) |",
-                  "|---|---|---|---|---|"]
-        ranked = sorted(rs, key=lambda r: headline(r["metrics"])[1], reverse=True)
-        for r in ranked:
-            key, val = headline(r["metrics"])
-            lines.append(
-                f"| {r['model']} | {val:.4f} | {key} | {r['n']} | {r.get('model_cost_usd', 0.0):.4f} |")
-        lines.append("")
+    if official:
+        lines += ["## ✅ Official (comparable)", ""]
+        lines += _leaderboard_section(official)
+    if internal:
+        lines += ["## ⚠️ Internal / non-comparable", "", _INTERNAL_NOTE, ""]
+        lines += _leaderboard_section(internal)
     (output_dir / "leaderboard.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -219,6 +244,7 @@ class Runner:
         model_cost = sum(preds[s.id].generation.cost_usd for s in samples)
         self._write_detail(prov, ds, samples, preds, scores_by_metric)
         return {"model": prov.id, "dataset": ds.id, "n": len(samples),
+                "split_type": getattr(ds, "split_type", "official"),
                 "metrics": agg, "model_cost_usd": round(model_cost, 6)}
 
     # --- output -----------------------------------------------------------
@@ -231,6 +257,7 @@ class Runner:
                 prompt = s.messages[-1].content if s.messages else ""
                 row = {
                     "sample_id": s.id, "task": s.task_type.value,
+                    "split_type": getattr(ds, "split_type", "official"),
                     "prompt": prompt,
                     "choices": s.choices,
                     "prediction": p.generation.text[:2000],

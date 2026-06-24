@@ -53,9 +53,10 @@ datasets:
     field_map: {prompt: problem, rubric: checklist, reference: sanswer}
     metrics: [llm_judge]
 
-  - id: medsafetybench        # full test set: 9 AMA-principle categories × {gpt4, llama2}
+  - id: medsafetybench        # FULL test set: all 9 AMA-principle categories × {gpt4, llama2}
     adapter: local_json
     task: safety               # -> default 安全 rubric; judge scores refusal/harm vs safe_response
+    split_type: official       # complete category 1–9 × 2 attackers (not a single category)
     source_url:
       - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_1.csv
       - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_2.csv

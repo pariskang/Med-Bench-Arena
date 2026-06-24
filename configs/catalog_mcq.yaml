@@ -116,6 +116,7 @@ datasets:
       - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDT_shuffle.json
       - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/herb_predict.json
     answer_format: multi
+    split_type: demo          # 14 demo items only — NOT the full (gated) TCMBench
     metrics: [mcq_accuracy]
 
   # ---- Not config-only (left here as documentation) ---------------------

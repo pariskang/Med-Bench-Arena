@@ -94,7 +94,46 @@ def test_pool_cli_launches_and_merges():
         assert [x for x in rows if x["dataset"] == "demo_agent"][0]["n"] == 9
 
 
+def test_split_type_separates_official_from_internal():
+    """leaderboard.md keeps `official` runs apart from validation/demo/approximated."""
+    from medeval.runner import write_leaderboard
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        rows = [
+            {"model": "m", "dataset": "medqa", "n": 10, "split_type": "official",
+             "metrics": {"mcq_accuracy": {"accuracy": 0.8, "n": 10}}, "model_cost_usd": 0.0},
+            {"model": "m", "dataset": "tcmbench_demo", "n": 20, "split_type": "demo",
+             "metrics": {"mcq_accuracy": {"accuracy": 0.5, "n": 20}}, "model_cost_usd": 0.0},
+            {"model": "m", "dataset": "medagentbench", "n": 5, "split_type": "approximated",
+             "metrics": {"pass_k": {"pass^k": 0.4}}, "model_cost_usd": 0.0},
+        ]
+        write_leaderboard(rows, d)
+        md = (d / "leaderboard.md").read_text()
+        assert "## ✅ Official (comparable)" in md
+        assert "## ⚠️ Internal / non-comparable" in md
+        official = md.split("Internal")[0]
+        assert "medqa" in official and "tcmbench_demo" not in official  # demo not in official
+        assert "`split_type: demo`" in md and "`split_type: approximated`" in md
+        by = {r["dataset"]: r["split_type"] for r in json.loads((d / "leaderboard.json").read_text())}
+        assert by["medagentbench"] == "approximated"
+
+
+def test_merge_recovers_split_type():
+    """A sharded run records split_type in detail; merge surfaces it on the row."""
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        for shard in (0, 1):
+            cfg = _cfg(d / "out", num_shards=2, shard=shard)
+            cfg["datasets"][0]["split_type"] = "demo"
+            medeval.run_config(cfg)
+        rows = merge_results(d / "out")
+        row = [r for r in rows if r["dataset"] == "demo_agent"][0]
+        assert row["split_type"] == "demo"
+
+
 if __name__ == "__main__":
     test_shard_then_merge_equals_full_run()
     test_pool_cli_launches_and_merges()
+    test_split_type_separates_official_from_internal()
+    test_merge_recovers_split_type()
     print("OK: distributed scheduling tests passed")

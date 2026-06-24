@@ -43,6 +43,24 @@ Verified profile (full load): MedQA 1273 · MedMCQA 4183 · PubMedQA 1000 · MML
 > booleans. `inject_options: [yes, no, maybe]` silently becomes `[True, False,
 > "maybe"]` — **quote them**: `["yes", "no", "maybe"]`.
 
+### Comparability tiers — `split_type`
+
+Every dataset carries a `split_type` so *officially-comparable* runs are never
+mixed with internal ones; the leaderboard splits **✅ Official** from **⚠️ Internal /
+non-comparable**. Set it in the dataset config (default `official`):
+
+| `split_type` | meaning | examples here |
+|---|---|---|
+| `official` | full official split + official metric/grader | CMB-test, MedQA, MMLU, MedSafetyBench (1–9), TCM-Ladder (text + visual) |
+| `validation` | a dev/val split, not the held-out test | CMB-val, TCMEval-SDT (Train) |
+| `demo` | a tiny demo subset shipped in lieu of the full corpus | TCMBench (14 demo items) |
+| `sample` | a small public sample of an otherwise-gated set | CSEDB (2-record sample) |
+| `gated` | full set needs manual access; partial here | — |
+| `approximated` | a built-in/approximate grader, not the official one | MedAgentBench (built-in grader), AgentClinic (scripted offline) |
+
+`MedAgentBench` and `AgentClinic` set this **dynamically**: official when you supply
+the gated `refsol_path` / LLM `support:` agents, else `approximated`.
+
 ---
 
 ## 1. Multiple-choice (`hf_mcq`, `tcmbench`)

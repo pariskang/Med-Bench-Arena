@@ -127,7 +127,7 @@ medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 
 ## 🔬 Reliability & reproducibility
 
-MCQ evaluation is only trustworthy if the data is exactly what you think it is. Two guards:
+MCQ evaluation is only trustworthy if the data is exactly what you think it is. Four guards:
 
 - **Pinned revisions** — every headline MCQ benchmark is locked to an immutable commit, so the eval set can never silently change. HF repos use `revision: <sha>` (passed to `load_dataset`); raw-file sources embed the commit in the URL (`…/resolve/<sha>/…`, `raw.githubusercontent/…/<sha>/…`). Large pinned files download via an atomic, **HTTP-Range-resuming** fetcher — robust to proxies that truncate big responses, and a failed download never poisons the cache.
 - **`preflight`** — profile every dataset *without a model*: sample count, option-count distribution, **answer-parse success rate**, and the first few examples. Run it before you spend a single token:
@@ -145,6 +145,9 @@ python -m medeval preflight configs/catalog_mcq.yaml --strict # CI: non-zero exi
 ```
 
 A parse rate below 100% means rows are being dropped (a mis-mapped `field_map`, an unexpected answer encoding, options that don't parse) — `preflight` lists them by reason so you fix the config, not the symptoms.
+
+- **Comparability tiers (`split_type`)** — every result row carries a `split_type` so *officially-comparable* runs never get mixed with internal ones on the leaderboard. The leaderboard renders **✅ Official** and **⚠️ Internal / non-comparable** as separate sections. Values: `official` · `validation` · `demo` · `sample` · `gated` · `approximated`. So **CMB-val** (validation), **TCMBench-demo** (demo), **CSEDB-sample** (sample), and **MedAgentBench's built-in grader** (approximated, unless you supply the official `refsol_path`) are clearly fenced off from a full official run.
+- **Automated on every web session + CI** — a `SessionStart` hook (`.claude/`) installs deps and runs `preflight --strict` so each Claude-Code-on-the-web session profiles the eval set up front; GitHub Actions (`.github/workflows/ci.yml`) runs the offline test suite **and** `preflight --strict` as a data gate on every push/PR.
 
 ---
 
