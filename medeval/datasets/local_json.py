@@ -21,7 +21,6 @@ import csv
 import hashlib
 import json
 import os
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +30,8 @@ from .base import DatasetAdapter, register_dataset
 CACHE_DIR = Path(os.environ.get("MEDEVAL_CACHE", "data/cache"))
 
 # rubric key aliases seen across datasets
-_CRIT_KEYS = ("criterion", "规则内容", "text", "description", "rule", "内容")
+_CRIT_KEYS = ("criterion", "规则内容", "text", "description", "rule", "内容",
+              "content", "keypoint", "key_point")   # MedEthicsBench key_points / PrinciplismQA
 _POINT_KEYS = ("points", "分数", "weight", "score", "权重")
 
 
@@ -103,14 +103,15 @@ class LocalJSONAdapter(DatasetAdapter):
             raise ValueError(f"{self.id}: need source_url, path, or hf")
         urls = urls if isinstance(urls, list) else [urls]
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        from ..assets import _download_stream
         out: list[Path] = []
         for url in urls:
             h = hashlib.sha256(url.encode()).hexdigest()[:16]
             dest = CACHE_DIR / f"{self.id}_{h}{self._infer_ext(url)}"
-            if not dest.exists():
-                req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
-                with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
-                    f.write(r.read())
+            # robust fetch: atomic .part rename + HTTP-Range resume + retry, so a proxy
+            # that truncates a big response (IncompleteRead, e.g. CARES-18K parquet)
+            # never poisons the cache — same streamer hf_mcq's data_files uses.
+            _download_stream(url, dest)
             out.append(dest)
         return out
 
@@ -126,7 +127,7 @@ class LocalJSONAdapter(DatasetAdapter):
         if fmt == "parquet":  # binary; embedded-image open VQA (e.g. SLAKE-en)
             import datasets as _ds
             return [dict(r) for r in _ds.Dataset.from_parquet(str(fp))]
-        text = fp.read_text(encoding="utf-8")
+        text = fp.read_text(encoding="utf-8-sig")  # tolerate a leading BOM (CSV col-0 names)
         if fmt in ("jsonl",):
             return [json.loads(line) for line in text.splitlines() if line.strip()]
         if fmt in ("csv", "tsv"):

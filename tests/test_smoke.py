@@ -67,6 +67,24 @@ def test_llm_judge_default_rubric_runs():
     assert score.value == 1.0  # mock judge awards all default-rubric criteria
 
 
+def test_catalog_configs_valid():
+    """Every dataset in the shipped catalogs parses, has a unique id, references a
+    registered adapter, and carries a field_map / source — guards config typos
+    (incl. the new ethics-safety + cn_tcm entries) without any network."""
+    adapters = set(medeval.available_adapters())
+    for name in ("catalog_ethics_safety.yaml", "catalog_cn_tcm.yaml",
+                 "catalog_mcq.yaml", "example_open_safety.yaml", "example_tcm.yaml"):
+        cfg = yaml.safe_load((ROOT / "configs" / name).read_text(encoding="utf-8"))
+        ids = [d["id"] for d in cfg["datasets"]]
+        assert len(ids) == len(set(ids)), f"{name}: duplicate dataset id"
+        for d in cfg["datasets"]:
+            assert d["adapter"] in adapters, f"{name}/{d['id']}: unknown adapter {d['adapter']!r}"
+            if d["adapter"] in ("hf_mcq", "local_json"):   # config-driven adapters need a field_map
+                assert "field_map" in d, f"{name}/{d['id']}: missing field_map"
+            assert any(k in d for k in ("path", "data_files", "source_url", "hf")), \
+                f"{name}/{d['id']}: no data source (path/data_files/source_url/hf)"
+
+
 def test_end_to_end_smoke():
     cfg = yaml.safe_load((ROOT / "configs/example_smoke.yaml").read_text())
     cfg["run"]["output_dir"] = str(ROOT / "results/smoke_test")
@@ -88,5 +106,6 @@ if __name__ == "__main__":
     test_mcq_answer_parsing()
     test_mock_provider_judge_and_mcq()
     test_llm_judge_default_rubric_runs()
+    test_catalog_configs_valid()
     test_end_to_end_smoke()
     print("OK: all smoke tests passed")

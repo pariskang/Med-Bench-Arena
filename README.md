@@ -9,8 +9,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Tests](https://img.shields.io/badge/tests-12%2F12%20passing-brightgreen.svg)](tests/)
-[![Benchmarks](https://img.shields.io/badge/benchmarks-30%2B%20live--verified-8A2BE2.svg)](DATASETS.md)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-40%2B%20live--verified-8A2BE2.svg)](DATASETS.md)
 [![TCM](https://img.shields.io/badge/中医-first--class-c1272d.svg)](#-traditional-chinese-medicine-中医)
+[![Ethics & Safety](https://img.shields.io/badge/伦理·安全-first--class-2E8B57.svg)](configs/catalog_ethics_safety.yaml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
 
 **English** · [简体中文](README.zh-CN.md)
@@ -19,7 +20,7 @@
 
 ---
 
-**Med-Bench-Arena** is a reference implementation of the *MedEval protocol*: plug **30+ medical / TCM benchmarks** into **any** LLM or agent backend and score them with **12 metrics** — from plain MCQ accuracy to rubric-graded safety, structured 方剂/辨证 matching, and interactive agent `pass^k`. A single **canonical schema** sits between datasets, model backends, and metrics, so you get free `N datasets × M backends × K metrics` composition instead of `N×M×K` hard-coding.
+**Med-Bench-Arena** is a reference implementation of the *MedEval protocol*: plug **40+ medical / TCM / ethics-&-safety benchmarks** into **any** LLM or agent backend and score them with **12 metrics** — from plain MCQ accuracy to rubric-graded safety, structured 方剂/辨证 matching, and interactive agent `pass^k`. A single **canonical schema** sits between datasets, model backends, and metrics, so you get free `N datasets × M backends × K metrics` composition instead of `N×M×K` hard-coding.
 
 > 🔬 **Every** dataset entry in `configs/` was researched and **verified against its live source** (HuggingFace datasets-server / raw repo files) — real repo ids, splits, column names, and answer encodings. Where a source can only be partly reproduced (gated graders, held-out answers), the limitation is documented, never papered over. See [`DATASETS.md`](DATASETS.md).
 
@@ -33,8 +34,9 @@ python -m medeval run configs/example_smoke.yaml
 ## ✨ Highlights
 
 - 🧩 **Decoupled by design** — datasets, backends, and metrics depend *only* on the schema, never on each other. Add a similar dataset = edit YAML, zero code.
-- 📚 **30+ live-verified benchmarks** — MCQ, open-ended (LLM-judge), safety, multimodal (舌象/影像), and interactive agents — across English & Chinese.
-- 🀄 **Traditional Chinese Medicine, first-class** — 辨证证型链, 方剂结构匹配 (君臣佐使), 经络腧穴, 古籍本体, 舌象/脉象, plus a downloadable **knowledge graph** of the classics.
+- 📚 **40+ live-verified benchmarks** — MCQ, open-ended (LLM-judge), safety, multimodal (舌象/影像), and interactive agents — across English & Chinese.
+- ⚖️ **Medical ethics & safety, first-class** — a dedicated [`catalog_ethics_safety.yaml`](configs/catalog_ethics_safety.yaml): principlism MCQ (MedEthicsQA · PrinciplismQA · MedEthicEval · TCM_Humanities), open 伦理两难, and AI-safety red-teaming (CARES-18K, refusal/jailbreak/over-refusal) — the axis where models lag most.
+- 🀄 **Traditional Chinese Medicine, first-class** — 辨证证型链, 方剂结构匹配 (君臣佐使), 经络腧穴, 古籍本体, 舌象/脉象, real 名老中医医案, plus a downloadable **knowledge graph** of the classics.
 - 🤖 **Real agent loops** — AgentClinic (OSCE + NEJM), **MedAgentBench** against a live **FHIR** EHR server, and **MediQ** proactive questioning — scored with `pass^k`.
 - 🔌 **Any backend** — local **HF/vLLM** (batched), **Poe**, and **LiteLLM** (100+ providers + the recommended judge). All swappable by one line of YAML.
 - ⚖️ **Faithful grading** — HealthBench per-criterion rubric, MedAgentBench per-task FHIR-payload validation (+ official gated `refsol.py`), signed-point safety rubrics.
@@ -56,7 +58,7 @@ Three tensions drive the design (and the dataset choices):
 
 1. **Exam saturation vs. real clinical work** → static MCQ *and* rubric-graded open tasks *and* interactive agent environments.
 2. **Single-turn QA vs. sequential care** → an agent loop (AgentClinic / MedAgentBench / MediQ) scored with **pass^k**, not one-shot.
-3. **Accuracy vs. safety** (safety systematically lags) → safety is its own task type with its own rubric (CSEDB / MedSafetyBench / MTCMB-SE).
+3. **Accuracy vs. safety & ethics** (both systematically lag) → safety/ethics are their own task types with their own rubrics (CSEDB / MedSafetyBench / MTCMB-SE / **CARES-18K** red-teaming), plus a dedicated medical-ethics arena (**MedEthicsQA / PrinciplismQA / MedEthicEval / MedEthicsBench**).
 
 ---
 
@@ -103,6 +105,7 @@ python tests/test_smoke.py && python tests/test_adapters.py     # full offline s
 python -m medeval run configs/catalog_mcq.yaml        --limit 5   # MedQA · MedMCQA · PubMedQA · MMLU · CMB · CMExam · TCMBench
 python -m medeval run configs/catalog_en_med.yaml     --limit 5   # MedXpertQA · MedCalc · MedHallu · MLEC-QA · MediQ …
 python -m medeval run configs/catalog_multimodal.yaml --limit 5   # MedFrameQA · SLAKE · TCM-Vision (needs a vision model)
+python -m medeval run configs/catalog_ethics_safety.yaml --limit 5 # 医学伦理 MedEthicsQA · PrinciplismQA · MedEthicEval · CARES-18K safety
 python -m medeval run configs/example_tcm.yaml        --limit 3   # CMB + 辨证 SDT + 方剂 + 安全 (judged)
 python -m medeval run configs/example_agentclinic.yaml --limit 5  # pass^k, fully offline
 ```
@@ -171,6 +174,13 @@ A representative slice (all wired & verified against live sources; **30+** docum
 | **TCMEval-SDT** 辨证 | `local_json` | llm_judge + syndrome_chain | `zhuyan166/TCMEval` |
 | **MTCMB** 方剂/安全 | `local_json` | llm_judge + prescription_match | `Wayyuanyuan/MTCMB` |
 | **MedSafetyBench** | `local_json` | llm_judge (safety) | `AI4LIFE-GROUP/med-safety-bench` — **all 18 CSV** (9 AMA × 2) |
+| **MedEthicsQA** ⚖️ | `hf_mcq` | mcq_accuracy | `JianhuiWei7/MedEthicsQA` — **5,623** ethics MCQ (bilingual), 100% parse |
+| **PrinciplismQA** ⚖️ | `hf_mcq` + `local_json` | mcq_accuracy + llm_judge | `FreedomIntelligence/PrinciplismQA-Demo` — 100 MCQ + 126 rubric |
+| **MedEthicEval** ⚖️ | `hf_mcq` + `local_json` | mcq_accuracy + llm_judge | `X-LANCE/MedEthicEval` (NAACL'25) — 629 知识 + 伦理两难 + 违规检测 |
+| **TCM_Humanities** ⚖️ | `hf_mcq` | mcq_accuracy | `TCMLM/TCM_Humanities` — **500** 医学人文/伦理/卫生法 MCQ (multi) |
+| **MedEthicsBench** ⚖️ | `local_json` | llm_judge (rubric) | `pariskang/MedEthicsBench` — key-point rubric (forward-compatible) |
+| **CARES-18K** 🛡️ | `local_json` | llm_judge (safety) | `HFXM/CARES-18K` — **9,239** red-team prompts (8 principles × 4 harm × 4 strategy) |
+| **real_clinical_cases** 🀄 | `local_json` | syndrome_chain + llm_judge | `TCMLM/real_clinical_cases…` — **500** 名老中医医案 (辨证论治) |
 | **AgentClinic** | `agentclinic` | pass_k | `SamuelSchmidgall/AgentClinic` — MedQA **214** + NEJM **120** |
 | **MedAgentBench** | `medagentbench` | pass_k | live FHIR (Docker); **per-task payload grader** (+ gated `refsol.py`) |
 | **MediQ** | `mediq` | pass_k | `stellalisy/MediQ` — proactive questioning |
@@ -356,8 +366,8 @@ medeval/
 ├── submit.py                  # OpenCompass / MedBench export
 ├── assets.py                  # auto download + unzip images.zip
 └── cli.py                     # python -m medeval run|preflight|list|export|merge|pool|slurm|kg|fetch
-configs/                       # declarative, live-verified run specs
-tests/                         # 10 offline suites (no keys / GPU / network)
+configs/                       # declarative, live-verified run specs (incl. catalog_ethics_safety.yaml)
+tests/                         # 12 offline suites (no keys / GPU / network)
 DATASETS.md                    # per-dataset access notes, caveats, field maps
 ```
 
@@ -383,7 +393,7 @@ If Med-Bench-Arena helps your research, please cite it:
 Contributions are welcome! Adding a benchmark is usually **config-only** (see `DATASETS.md` for the field-map vocabulary). For a new adapter/metric/backend, register it with the decorator above and add a test under `tests/`. Please run the offline suite before opening a PR:
 
 ```bash
-for t in tests/test_*.py; do python "$t"; done      # all 10 should print OK
+for t in tests/test_*.py; do python "$t"; done      # all 12 should print OK
 ```
 
 ---
@@ -396,6 +406,6 @@ for t in tests/test_*.py; do python "$t"; done      # all 10 should print OK
 
 ## 🙏 Acknowledgements
 
-Built on the shoulders of the open benchmarks it wires — MedQA, MedMCQA, PubMedQA, MMLU, CMB, CMExam, TCMBench, TCM-Ladder, HealthBench, LLMEval-Med, TCMEval, MTCMB, CSEDB, MedSafetyBench, AgentClinic, MedAgentBench, MediQ and more — and the backends that run them (HuggingFace, vLLM, Poe, LiteLLM). Thank you to every dataset author.
+Built on the shoulders of the open benchmarks it wires — MedQA, MedMCQA, PubMedQA, MMLU, CMB, CMExam, TCMBench, TCM-Ladder, HealthBench, LLMEval-Med, TCMEval, MTCMB, CSEDB, MedSafetyBench, AgentClinic, MedAgentBench, MediQ, and the ethics-&-safety sets MedEthicsBench, MedEthicsQA, PrinciplismQA, MedEthicEval, TCM_Humanities, CARES-18K, plus the TCMLM real 名老中医医案 corpus — and the backends that run them (HuggingFace, vLLM, Poe, LiteLLM). Thank you to every dataset author.
 
 <div align="center"><sub>Made for rigorous, reproducible medical & TCM model evaluation. ⭐ Star us if this is useful!</sub></div>
