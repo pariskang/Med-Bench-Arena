@@ -14,6 +14,17 @@ from ..schema import Prediction, Sample
 
 _REGISTRY: dict[str, type["DatasetAdapter"]] = {}
 
+# Comparability tiers (leaderboard ``split_type``). "official" runs are directly
+# comparable to public leaderboards; everything else is internal-only.
+SPLIT_TYPES = frozenset({
+    "official",      # full official split + the official metric/grader
+    "validation",    # a dev/val split (not the held-out test)
+    "demo",          # a tiny demo subset shipped in lieu of the full corpus
+    "sample",        # a small public sample of an otherwise-gated set
+    "gated",         # full set requires manual access; partial here
+    "approximated",  # a built-in/approximate grader, not the official one
+})
+
 
 def register_dataset(name: str) -> Callable[[type], type]:
     def deco(cls: type) -> type:
@@ -74,6 +85,19 @@ class DatasetAdapter(abc.ABC):
         self.metrics: list[str] = [n for n, _ in self.metric_specs]
         # optional per-dataset judge override (model id) for llm_judge
         self.judge: str | None = config.get("judge")
+        # comparability tier — keeps "officially comparable" runs from being mixed
+        # with internal ones on the leaderboard. One of:
+        #   official | validation | demo | sample | gated | approximated
+        # (default "official"; adapters whose comparability depends on runtime —
+        # e.g. MedAgentBench's built-in grader — may override below).
+        self.split_type: str = config.get("split_type", "official")
+        if self.split_type not in SPLIT_TYPES:
+            import warnings
+            warnings.warn(f"{self.id}: unknown split_type {self.split_type!r}; "
+                          f"expected one of {sorted(SPLIT_TYPES)}")
+        # reliability counters populated during load() (read by `medeval preflight`):
+        # {"seen": int, "kept": int, "dropped": {reason: count}}
+        self.load_stats: dict[str, Any] = {}
 
     @abc.abstractmethod
     def load(self) -> list[Sample]:

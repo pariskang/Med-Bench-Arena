@@ -20,11 +20,12 @@ models:
   # - {id: mock-model, type: mock, behavior: auto}     # offline dry-run
 
 datasets:
-  # --- text MCQ (no change needed; A-E columns, multi-answer) ---
+  # --- text MCQ (A-E columns, multi-answer) ---
   - id: tcm_ladder_mc
     adapter: hf_mcq
     format: parquet
-    data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/main/multiChoice.parquet
+    # pinned to an immutable commit (resolve/<sha>) for reproducibility
+    data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/4e875657f9ff650df432427221bb4f957e30b6f0/multiChoice.parquet
     split: train
     field_map: {question: question, options: [A, B, C, D, E], answer: answer}
     answer_format: multi          # "C" and "ABCDE" both handled; blank trailing E dropped
@@ -36,15 +37,22 @@ datasets:
   # (herb = a 2x2 grid of 4 photos "which is X?"; tongue = 1 photo + 4 text options
   # "which constitution?"). So the model just reads the image and outputs the letter;
   # no question/options are injected. (category herb/tongue + lang are report slices.)
+  # FAITHFUL reproduction of the original visual-QA task (verified by inspecting the
+  # images): each row IS the rendered 4-option question — herb = a 2x2 grid of 4 photos
+  # ("以下哪种草药为…？"), tongue = 1 photo + 4 text options ("…属于哪种体质？  A. … D. …").
+  # The model reads the image and outputs the letter; gold `answer` is A/B/C/D. This is
+  # NOT a herb/tongue binary classifier (category/lang are only report slices).
   - id: tcm_ladder_visual
     adapter: hf_mcq
     format: parquet
-    data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/main/visual.parquet
+    # pinned to an immutable commit (resolve/<sha>) for reproducibility
+    data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/4e875657f9ff650df432427221bb4f957e30b6f0/visual.parquet
     split: train
     question_text: "The image is a multiple-choice question with options labeled A, B, C, D. Answer with ONLY the letter of the correct option. 图中为四选一选择题，请只回答正确选项的字母。"
     prompt_template: "{question}"   # options are in the image -> don't render a text block
     inject_options: ["A", "B", "C", "D"]
     field_map: {answer: answer, image: image}
     answer_format: letter           # gold 'answer' is the letter A/B/C/D
+    split_type: official            # faithful original visual MCQ (not a sanity-check)
     metrics: [mcq_accuracy]
     # NOTE: visual.parquet is ~730 MB (images embedded). Use --limit, or stream.

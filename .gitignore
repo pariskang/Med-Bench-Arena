@@ -17,3 +17,6 @@ data/cache/
 *.safetensors
 *.bin
 .DS_Store
+
+# Calibration: heavy blind-reviewer prose (regenerable via `medeval calibrate --rebuild-from`)
+data/calibration/healthbench_meta_items.jsonl

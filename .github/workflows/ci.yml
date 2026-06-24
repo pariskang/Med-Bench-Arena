@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast, offline: the full pipeline (generate -> parse -> judge/pass^k ->
+  # leaderboard) on the deterministic mock backend + local fixtures. No keys/GPU.
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[all]" Pillow
+      - name: Run offline test suite
+        run: |
+          fail=0
+          for t in tests/test_*.py; do
+            echo "::group::$t"; python "$t" || fail=1; echo "::endgroup::"
+          done
+          exit $fail
+
+  # Data gate: profile every pinned MCQ benchmark against its live source and fail
+  # if any parses < 99.9% (a broken pin, a mis-mapped field_map, an answer-encoding
+  # change). This is the "official-comparable" guarantee, run on real data.
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[all]"
+      - name: Preflight (strict) — profile the MCQ eval set
+        run: python -m medeval preflight configs/catalog_mcq.yaml --strict --out preflight.json
+      - name: Upload preflight report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preflight-report
+          path: preflight.json

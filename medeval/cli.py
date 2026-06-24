@@ -91,6 +91,74 @@ def cmd_slurm(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_preflight(args: argparse.Namespace) -> int:
+    from .preflight import preflight, format_reports
+    cfg = _load_config(args.config)
+    ids = args.datasets.split(",") if args.datasets else None
+    reports = preflight(cfg, dataset_ids=ids, limit=args.limit, n_examples=args.examples)
+    print(format_reports(reports))
+    if args.output:
+        import json
+        Path(args.output).write_text(
+            json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[medeval] wrote preflight report -> {args.output}")
+    # exit non-zero if any dataset errored or parsed < 100% (CI-friendly)
+    bad = any("error" in r or r.get("answer_parse_rate", 1.0) < 0.999 for r in reports)
+    return 1 if (bad and args.strict) else 0
+
+
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    """Measure judge↔human agreement on the frozen, physician-labeled set."""
+    import asyncio
+    import json
+    from . import calibrate as cal
+
+    if args.rebuild_from:
+        n = cal.build_meta_set(args.rebuild_from, args.items, args.gold, n=args.n)
+        print(f"[medeval] wrote {n} calibration items -> {args.items} (+ gold {args.gold})")
+        return 0
+
+    items = cal.load_calibration_set(args.items, args.gold)
+    if not items:
+        print(f"[medeval] no calibration items found at {args.items}; "
+              "run with --rebuild-from <meta_eval.jsonl URL/path> first")
+        return 2
+
+    if args.labels:
+        preds = cal.load_label_preds(args.labels)
+        name = args.rater_name
+    elif args.config and args.judge:
+        if not any(it.completion for it in items):
+            print(f"[medeval] live-judge mode needs the prose items file ({args.items}); "
+                  "regenerate it with: medeval calibrate --rebuild-from <meta_eval.jsonl URL/path>")
+            return 2
+        from .providers.base import create_provider
+        cfg = _load_config(args.config)
+        spec = next((m for m in cfg.get("models", []) if m.get("id") == args.judge), None)
+        if spec is None:
+            print(f"[medeval] judge {args.judge!r} not found in {args.config}")
+            return 2
+        judge = create_provider(spec)
+        preds = asyncio.run(cal.llm_judge_preds(items, judge))
+        name = args.judge
+    else:
+        print("[medeval] provide --labels <reviewer.jsonl> or (--config <run.yaml> --judge <model_id>)")
+        return 2
+
+    report = cal.evaluate(items, preds, name)
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "calibration_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    md = cal.render_report(report, dataset=args.dataset_name)
+    (out / "calibration_report.md").write_text(md, encoding="utf-8")
+    print(md)
+    print(f"\n[medeval] wrote {out/'calibration_report.md'} (+ .json)")
+    if args.strict and not report["verdict"]["calibrated"]:
+        return 1
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     print("providers:", ", ".join(available_providers()))
     print("adapters :", ", ".join(available_adapters()))
@@ -120,6 +188,44 @@ def main(argv: list[str] | None = None) -> int:
                        help="total shards for distributed runs")
     p_run.add_argument("--shard", type=int, default=0, help="this worker's shard index")
     p_run.set_defaults(func=cmd_run)
+
+    p_pre = sub.add_parser("preflight",
+                           help="profile datasets (count · option dist · answer-parse rate · examples) — no model")
+    p_pre.add_argument("config", help="path to the YAML run spec")
+    p_pre.add_argument("--datasets", default=None,
+                       help="comma-separated dataset ids to check (default: all in the config)")
+    p_pre.add_argument("--limit", type=int, default=None,
+                       help="cap rows per dataset (default: full load, for a true count)")
+    p_pre.add_argument("--examples", type=int, default=3, help="sample rows to show per dataset")
+    p_pre.add_argument("--output", "--out", dest="output", default=None,
+                       help="also write the full report as JSON")
+    p_pre.add_argument("--strict", action="store_true",
+                       help="exit non-zero if any dataset errors or parses < 100%%")
+    p_pre.set_defaults(func=cmd_preflight)
+
+    p_cal = sub.add_parser("calibrate",
+                           help="measure judge↔human agreement on open-ended scoring (physician-labeled set)")
+    p_cal.add_argument("--items", default="data/calibration/healthbench_meta_items.jsonl",
+                       help="blind reviewer file (conversation/completion/rubric, no labels)")
+    p_cal.add_argument("--gold", default="data/calibration/healthbench_meta_gold.jsonl",
+                       help="held-out physician-label file")
+    p_cal.add_argument("--labels", default=None,
+                       help="JSONL of {item_id, criteria_met}: a strong-model / human reviewer pass")
+    p_cal.add_argument("--rater-name", default="strong-model judge",
+                       help="label for the --labels rater in the report")
+    p_cal.add_argument("--config", default=None,
+                       help="run YAML providing a judge model (live llm_judge rater)")
+    p_cal.add_argument("--judge", default=None, help="judge model id in --config to run live")
+    p_cal.add_argument("--dataset-name", default="HealthBench meta-eval",
+                       help="dataset label shown in the report")
+    p_cal.add_argument("--output", "--out", dest="output", default="data/calibration",
+                       help="dir for calibration_report.md / .json")
+    p_cal.add_argument("--rebuild-from", default=None,
+                       help="regenerate the frozen set from a meta-eval JSONL (URL/path), then exit")
+    p_cal.add_argument("--n", type=int, default=120, help="rebuild: target sample size (≥100)")
+    p_cal.add_argument("--strict", action="store_true",
+                       help="exit non-zero if the judge is NOT calibrated")
+    p_cal.set_defaults(func=cmd_calibrate)
 
     p_list = sub.add_parser("list", help="list registered providers / adapters / metrics")
     p_list.set_defaults(func=cmd_list)

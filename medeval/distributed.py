@@ -70,7 +70,10 @@ def merge_results(results_dir: str | Path, output_dir: str | Path | None = None
                 agg[name] = {name: sum(vals) / len(vals) if vals else 0.0, "n": len(scores),
                              "warning": str(e)}
         cost = sum(float(r.get("cost_usd", 0.0)) for r in detail)
+        split_type = next((r.get("split_type") for r in detail if r.get("split_type")),
+                          "official")
         rows.append({"model": model, "dataset": dataset, "n": len(detail),
+                     "split_type": split_type,
                      "metrics": agg, "model_cost_usd": round(cost, 6),
                      "shards": len(files)})
 

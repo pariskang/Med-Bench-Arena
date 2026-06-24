@@ -20,19 +20,46 @@ CACHE_DIR = Path(os.environ.get("MEDEVAL_CACHE", "data/cache"))
 _MARKER = ".medeval_extracted"
 
 
-def _download_stream(url: str, dest: Path, retries: int = 4, chunk: int = 1 << 20) -> Path:
-    """Stream a (possibly huge) file to ``dest``, skipping if already complete."""
+def _download_stream(url: str, dest: Path, retries: int = 6, chunk: int = 1 << 20) -> Path:
+    """Robustly stream a (possibly huge) file to ``dest``.
+
+    Resilient to proxies/CDNs that cap or truncate a single response: it RESUMES
+    from the partial ``.part`` via HTTP ``Range`` requests, so each round makes
+    forward progress. Only *no-progress* rounds count against ``retries``; the file
+    is renamed into place atomically and only when complete, so a failed download
+    never poisons the cache. ``dest`` existing ⇒ a prior verified-complete download.
+    """
+    if dest.exists():
+        return dest
     tmp = dest.with_suffix(dest.suffix + ".part")
-    for attempt in range(retries + 1):
+    total = 0
+    stalls = 0
+    last = -1
+    rounds = 0
+    while True:
+        rounds += 1
+        done = tmp.stat().st_size if tmp.exists() else 0
+        stalls = stalls + 1 if done == last else 0   # progress resets the budget
+        last = done
+        if stalls > retries or rounds > 500:
+            raise OSError(f"download stalled at {done}/{total or '?'} bytes: {url}")
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
-            with urllib.request.urlopen(req, timeout=120) as r:
-                total = int(r.headers.get("Content-Length") or 0)
-                if dest.exists() and total and dest.stat().st_size == total:
-                    return dest
-                done = 0
-                next_mark = 50 << 20
-                with open(tmp, "wb") as f:
+            headers = {"User-Agent": "medeval/1.0"}
+            if done:
+                headers["Range"] = f"bytes={done}-"
+            with urllib.request.urlopen(
+                    urllib.request.Request(url, headers=headers), timeout=120) as r:
+                status = getattr(r, "status", r.getcode())
+                crange = r.headers.get("Content-Range")
+                if crange and "/" in crange:                 # "bytes a-b/total"
+                    total = int(crange.rsplit("/", 1)[-1])
+                elif status != 206:
+                    total = int(r.headers.get("Content-Length") or 0)
+                resuming = bool(done) and status == 206
+                if not resuming:                             # server ignored Range → restart
+                    done = 0
+                next_mark = (done // (50 << 20) + 1) * (50 << 20)
+                with open(tmp, "ab" if resuming else "wb") as f:
                     while True:
                         buf = r.read(chunk)
                         if not buf:
@@ -43,14 +70,13 @@ def _download_stream(url: str, dest: Path, retries: int = 4, chunk: int = 1 << 2
                             pct = f" ({100*done//total}%)" if total else ""
                             print(f"[medeval] downloading {dest.name}: {done >> 20} MiB{pct}")
                             next_mark += 50 << 20
-            tmp.replace(dest)
-            return dest
-        except Exception as e:  # noqa: BLE001
-            if attempt >= retries:
-                raise
-            print(f"[medeval] download retry {attempt + 1} ({e})")
-            time.sleep(2 ** attempt)
-    return dest
+            if not total or done >= total:                   # complete
+                tmp.replace(dest)
+                return dest
+        except Exception as e:  # noqa: BLE001 — resume on the next round
+            got = tmp.stat().st_size if tmp.exists() else 0
+            print(f"[medeval] resuming {dest.name} from {got} bytes ({e})")
+            time.sleep(min(2 ** stalls, 8))
 
 
 def _obtain(src: str | Path) -> Path:

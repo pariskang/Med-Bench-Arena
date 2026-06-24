@@ -59,25 +59,91 @@ def headline(agg: dict[str, Any]) -> tuple[str, float]:
     return "score", 0.0
 
 
+_INTERNAL_NOTE = (
+    "> ⚠️ **Not comparable to official leaderboards.** These runs use a "
+    "validation/dev split, a tiny demo subset, a small public sample, a gated "
+    "partial set, or a built-in (approximate) grader — see each section's "
+    "`split_type`. Reported for internal tracking only; do **not** publish them "
+    "as official scores.")
+
+_AUXILIARY_NOTE = (
+    "> ⚠️ **Auxiliary metric — open-ended, LLM-judge scored.** These scores come "
+    "from an LLM-as-judge whose agreement with human experts has not (yet) cleared "
+    "calibration, so they are reported as a secondary signal and never as a headline "
+    "rank. Calibrate a judge with `medeval calibrate` (see `data/calibration/`); a "
+    "judge becomes headline-eligible only when it matches the physician ceiling **and** "
+    "reaches substantial absolute agreement (κ ≥ 0.40). On HealthBench's physician "
+    "meta-eval a strong-model judge is *physician-equivalent* yet only *moderate* in "
+    "absolute terms (κ≈0.39 vs a 0.44 human ceiling) — rubric grading is intrinsically "
+    "subjective — so open-ended scores stay auxiliary by default.")
+
+
+def _judge_calibrated(output_dir: Path) -> bool:
+    """True iff a calibration report marking the judge headline-eligible is present.
+
+    Looks in the run's own dir then the canonical ``data/calibration/``. Absent or
+    failing report → open-ended judge scores are treated as auxiliary (the safe default).
+    """
+    for cand in (output_dir / "calibration_report.json",
+                 Path("data/calibration/calibration_report.json")):
+        try:
+            data = json.loads(cand.read_text(encoding="utf-8"))
+            if data.get("verdict", {}).get("calibrated") is True:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _is_judge_headline(row: dict[str, Any]) -> bool:
+    """Whether this row is ranked by an LLM-judge open-ended score."""
+    return headline(row["metrics"])[0] == "judge_score"
+
+
+def _leaderboard_section(subset: list[dict[str, Any]]) -> list[str]:
+    """Per-dataset ranked tables for one comparability tier."""
+    by_ds: dict[str, list] = {}
+    for r in subset:
+        by_ds.setdefault(r["dataset"], []).append(r)
+    out: list[str] = []
+    for dsid, rs in by_ds.items():
+        st = rs[0].get("split_type", "official")
+        tag = "" if st == "official" else f"  ·  `split_type: {st}`"
+        out += [f"### {dsid}{tag}", "",
+                "| Model | Score | Metric | n | Cost (USD) |",
+                "|---|---|---|---|---|"]
+        for r in sorted(rs, key=lambda r: headline(r["metrics"])[1], reverse=True):
+            key, val = headline(r["metrics"])
+            out.append(f"| {r['model']} | {val:.4f} | {key} | {r['n']} | "
+                       f"{r.get('model_cost_usd', 0.0):.4f} |")
+        out.append("")
+    return out
+
+
 def write_leaderboard(rows: list[dict[str, Any]], output_dir: Path) -> None:
-    """Write leaderboard.json + leaderboard.md for a set of result rows."""
+    """Write leaderboard.json + leaderboard.md, keeping **officially-comparable**
+    runs (``split_type == official``) in a separate section from internal ones."""
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "leaderboard.json").write_text(
         json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    by_ds: dict[str, list] = {}
-    for r in rows:
-        by_ds.setdefault(r["dataset"], []).append(r)
+
+    # Open-ended (LLM-judge) scores are auxiliary until the judge clears calibration.
+    judge_ok = _judge_calibrated(output_dir)
+    auxiliary = [r for r in rows if _is_judge_headline(r) and not judge_ok]
+    ranked = [r for r in rows if r not in auxiliary]
+    official = [r for r in ranked if r.get("split_type", "official") == "official"]
+    internal = [r for r in ranked if r.get("split_type", "official") != "official"]
     lines = ["# MedEval Leaderboard", ""]
-    for dsid, rs in by_ds.items():
-        lines += [f"## {dsid}", "",
-                  "| Model | Score | Metric | n | Cost (USD) |",
-                  "|---|---|---|---|---|"]
-        ranked = sorted(rs, key=lambda r: headline(r["metrics"])[1], reverse=True)
-        for r in ranked:
-            key, val = headline(r["metrics"])
-            lines.append(
-                f"| {r['model']} | {val:.4f} | {key} | {r['n']} | {r.get('model_cost_usd', 0.0):.4f} |")
-        lines.append("")
+    if official:
+        lines += ["## ✅ Official (comparable)", ""]
+        lines += _leaderboard_section(official)
+    if internal:
+        lines += ["## ⚠️ Internal / non-comparable", "", _INTERNAL_NOTE, ""]
+        lines += _leaderboard_section(internal)
+    if auxiliary:
+        lines += ["## 🧪 Auxiliary (open-ended · LLM-judge, uncalibrated)", "",
+                  _AUXILIARY_NOTE, ""]
+        lines += _leaderboard_section(auxiliary)
     (output_dir / "leaderboard.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -219,6 +285,7 @@ class Runner:
         model_cost = sum(preds[s.id].generation.cost_usd for s in samples)
         self._write_detail(prov, ds, samples, preds, scores_by_metric)
         return {"model": prov.id, "dataset": ds.id, "n": len(samples),
+                "split_type": getattr(ds, "split_type", "official"),
                 "metrics": agg, "model_cost_usd": round(model_cost, 6)}
 
     # --- output -----------------------------------------------------------
@@ -231,6 +298,7 @@ class Runner:
                 prompt = s.messages[-1].content if s.messages else ""
                 row = {
                     "sample_id": s.id, "task": s.task_type.value,
+                    "split_type": getattr(ds, "split_type", "official"),
                     "prompt": prompt,
                     "choices": s.choices,
                     "prediction": p.generation.text[:2000],

@@ -7,6 +7,60 @@ caveats below are the things that actually bite you.
 
 Legend: ✅ open & config-only · ⚠️ open but needs care · 🔒 gated / manual step.
 
+### Reproducibility — pinned revisions + `preflight`
+
+The headline MCQ sets are **pinned to an immutable commit** so the eval set can't
+change underneath you. HF-repo loads use `revision: <sha>` (→ `load_dataset`);
+raw-file sources embed the commit in the URL (`…/resolve/<sha>/…` for HF,
+`raw.githubusercontent/…/<sha>/…` for GitHub). Current pins (`catalog_mcq.yaml`,
+`example_tcm_ladder.yaml`):
+
+| Dataset | Pin (commit) |
+|---|---|
+| MedQA `GBaker/MedQA-USMLE-4-options` | `0fb93dd2…` |
+| MedMCQA `openlifescienceai/medmcqa` | `91c6572c…` |
+| MMLU `cais/mmlu` | `c30699e8…` |
+| PubMedQA `qiaojin/PubMedQA` | `9001f285…` |
+| CMB `FreedomIntelligence/CMB` (HF question / GitHub answer) | `935fbc09…` / `6c8ece46…` |
+| CMExam `williamliujl/CMExam` (GitHub) | `fadb22c8…` |
+| TCM-Ladder text `timzzyus/TCM-Ladder` (HF) | `4e875657…` |
+
+Before spending tokens, profile the data with **`preflight`** (sample count ·
+option-count distribution · answer-parse success rate · examples — *no model*):
+
+```bash
+python -m medeval preflight configs/catalog_mcq.yaml            # full report
+python -m medeval preflight configs/catalog_mcq.yaml --strict   # CI gate (<100% → exit 1)
+```
+
+A parse rate < 100% means rows are dropped (mis-mapped `field_map`, an unexpected
+answer encoding, options that don't parse); `preflight` lists drops by reason.
+Verified profile (full load): MedQA 1273 · MedMCQA 4183 · PubMedQA 1000 · MMLU 1089
+· CMB 11200 · CMExam 6810/6811 · TCM-Ladder text 12775/12778 — all **100%** parse
+(CMExam/TCM-Ladder each have a couple of genuinely malformed source rows, reported).
+
+> ⚠️ **YAML gotcha** (caught by `preflight`): bare `yes`/`no`/`on`/`off` are YAML
+> booleans. `inject_options: [yes, no, maybe]` silently becomes `[True, False,
+> "maybe"]` — **quote them**: `["yes", "no", "maybe"]`.
+
+### Comparability tiers — `split_type`
+
+Every dataset carries a `split_type` so *officially-comparable* runs are never
+mixed with internal ones; the leaderboard splits **✅ Official** from **⚠️ Internal /
+non-comparable**. Set it in the dataset config (default `official`):
+
+| `split_type` | meaning | examples here |
+|---|---|---|
+| `official` | full official split + official metric/grader | CMB-test, MedQA, MMLU, MedSafetyBench (1–9), TCM-Ladder (text + visual) |
+| `validation` | a dev/val split, not the held-out test | CMB-val, TCMEval-SDT (Train) |
+| `demo` | a tiny demo subset shipped in lieu of the full corpus | TCMBench (14 demo items) |
+| `sample` | a small public sample of an otherwise-gated set | CSEDB (2-record sample) |
+| `gated` | full set needs manual access; partial here | — |
+| `approximated` | a built-in/approximate grader, not the official one | MedAgentBench (built-in grader), AgentClinic (scripted offline) |
+
+`MedAgentBench` and `AgentClinic` set this **dynamically**: official when you supply
+the gated `refsol_path` / LLM `support:` agents, else `approximated`.
+
 ---
 
 ## 1. Multiple-choice (`hf_mcq`, `tcmbench`)
@@ -154,6 +208,21 @@ messages), an optional `rubric` (normalized from many shapes), `reference`, and 
  field_map: {prompt: prompt, rubric: rubrics, reference: ideal_completions_data},
  metrics: [{name: llm_judge, per_criterion: true}]}   # judge: gpt-4.1
 ```
+
+### HealthBench meta-eval ✅ (judge calibration — physician labels)
+- **Source:** `…/healthbench/2025-05-07-06-14-12_oss_meta_eval.jsonl` (29,511 rows). Each row is
+  one *(prompt, completion, rubric)* judged by **2+ physicians** (`binary_labels` +
+  `anonymized_physician_ids`). This is the only one of the open-ended sets that ships **human
+  gold**, so it anchors judge calibration. `medeval calibrate --rebuild-from <url>` draws a
+  frozen, deterministic, class-balanced, cluster-stratified **120-item** sample into
+  `data/calibration/` (a *blind* reviewer file + a held-out physician-label file).
+- **Agreement metric:** OpenAI simple-evals' **balanced pairwise F1** (met/unmet), replicated
+  verbatim, plus **Cohen's κ** + raw agreement with bootstrap 95% CIs, against the
+  **physician-vs-physician ceiling**. A judge is *headline-eligible* only when it matches the
+  human ceiling (ΔF1, Δκ ≤ 0.05) **and** reaches κ ≥ 0.40; otherwise its open-ended scores are
+  **auxiliary**. See `data/calibration/calibration_report.md` and the README's *Judge
+  calibration* section. Frozen result: a strong-model judge is physician-equivalent
+  (F1 0.697 vs 0.719 ceiling) but only moderate absolutely (κ 0.394) → **auxiliary**.
 
 ### LLMEval-Med ✅
 - **Source:** `llmeval/LLMEval-Med` `dataset/dataset.json`. **Caveat:** it's a **dict keyed

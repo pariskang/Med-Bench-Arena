@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-10%2F10%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-12%2F12%20passing-brightgreen.svg)](tests/)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-30%2B%20live--verified-8A2BE2.svg)](DATASETS.md)
 [![TCM](https://img.shields.io/badge/中医-first--class-c1272d.svg)](#-traditional-chinese-medicine-中医)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
@@ -38,6 +38,7 @@ python -m medeval run configs/example_smoke.yaml
 - 🤖 **Real agent loops** — AgentClinic (OSCE + NEJM), **MedAgentBench** against a live **FHIR** EHR server, and **MediQ** proactive questioning — scored with `pass^k`.
 - 🔌 **Any backend** — local **HF/vLLM** (batched), **Poe**, and **LiteLLM** (100+ providers + the recommended judge). All swappable by one line of YAML.
 - ⚖️ **Faithful grading** — HealthBench per-criterion rubric, MedAgentBench per-task FHIR-payload validation (+ official gated `refsol.py`), signed-point safety rubrics.
+- 🔬 **Calibrated judge** — open-ended LLM-judge scores are validated against **physician** labels (HealthBench meta-eval, balanced-F1 + κ vs the human ceiling) and demoted to an **auxiliary** tier until they clear calibration. `medeval calibrate`.
 - ⚡ **Scales out** — embarrassingly-parallel strided sharding across **local / Ray / Slurm**; resumable, no central server.
 - 📤 **Submission-ready** — export predictions to **OpenCompass** / **MedBench** upload formats.
 
@@ -45,7 +46,7 @@ python -m medeval run configs/example_smoke.yaml
 
 ## 📑 Table of contents
 
-[Why](#-why) · [Architecture](#-architecture) · [Install](#-install) · [Quick start](#-quick-start) · [Benchmarks](#-benchmark-catalog) · [Backends](#-backends) · [Metrics](#-metrics--judge) · [Agents](#-agents) · [Multimodal](#-multimodal-舌象--影像) · [TCM](#-traditional-chinese-medicine-中医) · [Distributed](#-distributed-scheduling) · [Submission](#-leaderboard-submission) · [Extending](#-extending) · [Layout](#-project-layout) · [Citation](#-citation) · [Contributing](#-contributing) · [License](#-license)
+[Why](#-why) · [Architecture](#-architecture) · [Install](#-install) · [Quick start](#-quick-start) · [Reliability](#-reliability--reproducibility) · [Benchmarks](#-benchmark-catalog) · [Backends](#-backends) · [Metrics](#-metrics--judge) · [Agents](#-agents) · [Multimodal](#-multimodal-舌象--影像) · [TCM](#-traditional-chinese-medicine-中医) · [Distributed](#-distributed-scheduling) · [Submission](#-leaderboard-submission) · [Extending](#-extending) · [Layout](#-project-layout) · [Citation](#-citation) · [Contributing](#-contributing) · [License](#-license)
 
 ---
 
@@ -125,6 +126,32 @@ medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 
 ---
 
+## 🔬 Reliability & reproducibility
+
+MCQ evaluation is only trustworthy if the data is exactly what you think it is. Four guards:
+
+- **Pinned revisions** — every headline MCQ benchmark is locked to an immutable commit, so the eval set can never silently change. HF repos use `revision: <sha>` (passed to `load_dataset`); raw-file sources embed the commit in the URL (`…/resolve/<sha>/…`, `raw.githubusercontent/…/<sha>/…`). Large pinned files download via an atomic, **HTTP-Range-resuming** fetcher — robust to proxies that truncate big responses, and a failed download never poisons the cache.
+- **`preflight`** — profile every dataset *without a model*: sample count, option-count distribution, **answer-parse success rate**, and the first few examples. Run it before you spend a single token:
+
+```bash
+python -m medeval preflight configs/catalog_mcq.yaml          # all datasets, full load
+python -m medeval preflight configs/catalog_mcq.yaml --strict # CI: non-zero exit if any parse < 100%
+```
+
+```
+✓ cmb_test   [hf_mcq]
+    样本数 samples        : 11200 of 11200 rows
+    选项数 option dist     : {3: 1, 4: 1201, 5: 9956, 6: 42}
+    解析率 answer parse    : 100.0%  ████████████████████
+```
+
+A parse rate below 100% means rows are being dropped (a mis-mapped `field_map`, an unexpected answer encoding, options that don't parse) — `preflight` lists them by reason so you fix the config, not the symptoms.
+
+- **Comparability tiers (`split_type`)** — every result row carries a `split_type` so *officially-comparable* runs never get mixed with internal ones on the leaderboard. The leaderboard renders **✅ Official** and **⚠️ Internal / non-comparable** as separate sections. Values: `official` · `validation` · `demo` · `sample` · `gated` · `approximated`. So **CMB-val** (validation), **TCMBench-demo** (demo), **CSEDB-sample** (sample), and **MedAgentBench's built-in grader** (approximated, unless you supply the official `refsol_path`) are clearly fenced off from a full official run.
+- **Automated on every web session + CI** — a `SessionStart` hook (`.claude/`) installs deps and runs `preflight --strict` so each Claude-Code-on-the-web session profiles the eval set up front; GitHub Actions (`.github/workflows/ci.yml`) runs the offline test suite **and** `preflight --strict` as a data gate on every push/PR.
+
+---
+
 ## 📊 Benchmark catalog
 
 A representative slice (all wired & verified against live sources; **30+** documented in [`DATASETS.md`](DATASETS.md)):
@@ -186,6 +213,45 @@ A representative slice (all wired & verified against live sources; **30+** docum
 </details>
 
 Multiple metrics per dataset are supported — e.g. TCMEval-SDT runs `[llm_judge, syndrome_chain, bleu, rouge]`.
+
+### ⚖️ Judge calibration — open-ended scores must earn the headline
+
+An LLM-judge score is only trustworthy if the judge agrees with **human experts**.
+`medeval calibrate` measures that agreement on a frozen, **physician-labeled** set and
+decides whether open-ended scores may headline the leaderboard or must be reported as an
+**auxiliary** metric.
+
+The anchor is **HealthBench's official meta-evaluation** — for each *(conversation,
+completion, rubric-item)* it ships the binary judgments of 2+ physicians, so we can compute
+*real* judge↔human agreement offline. We replicate OpenAI simple-evals' metric verbatim
+(**balanced pairwise F1** over met/unmet), report **Cohen's κ** + raw agreement with bootstrap
+95% CIs, and compare every rater against the **physician-vs-physician ceiling**.
+
+A strong frontier model graded **120 items blind** (the physician labels held out) using the
+verbatim HealthBench grader. The result:
+
+| vs physicians | Balanced F1 | Cohen's κ | Raw agree |
+|---|---|---|---|
+| **strong-model judge** | **0.697** [0.61, 0.77] | **0.394** [0.23, 0.54] | 0.736 |
+| _physician ceiling (human)_ | _0.719_ [0.63, 0.80] | _0.437_ | _0.745_ |
+
+The judge is **physician-equivalent** — within 0.05 of the human ceiling on *both* metrics, CIs
+overlapping. But the ceiling itself is only **moderate** (κ≈0.44): rubric-item grading is
+intrinsically subjective. So by policy the judge is **not headline-eligible** (absolute κ < 0.40)
+and open-ended scores are kept **auxiliary** — exactly the conservative default. The leaderboard
+enforces this: judge-scored datasets land in a separate *🧪 Auxiliary* tier until a calibration
+report marks the judge headline-eligible (`data/calibration/calibration_report.md`).
+
+```bash
+# regenerate the frozen physician-labeled set, then score a reviewer's blind labels
+python -m medeval calibrate --rebuild-from <oss_meta_eval.jsonl URL/path>
+python -m medeval calibrate --labels data/calibration/healthbench_meta_strongmodel_labels.jsonl
+# …or calibrate a live API judge against the same physician gold (same code path the leaderboard uses)
+python -m medeval calibrate --config configs/example_open_safety.yaml --judge gpt-4.1 --strict
+```
+
+> TCMEval-SDT / MTCMB ship no physician labels, so their open-ended scores inherit **auxiliary**
+> status until a TCM domain expert supplies a labels file — the harness scores it identically.
 
 ---
 
@@ -289,7 +355,7 @@ medeval/
 ├── distributed.py             # sharding · merge · local/Ray/Slurm
 ├── submit.py                  # OpenCompass / MedBench export
 ├── assets.py                  # auto download + unzip images.zip
-└── cli.py                     # python -m medeval run|list|export|merge|pool|slurm|kg|fetch
+└── cli.py                     # python -m medeval run|preflight|list|export|merge|pool|slurm|kg|fetch
 configs/                       # declarative, live-verified run specs
 tests/                         # 10 offline suites (no keys / GPU / network)
 DATASETS.md                    # per-dataset access notes, caveats, field maps

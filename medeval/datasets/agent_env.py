@@ -340,6 +340,10 @@ class AgentClinicAdapter(AgentAdapter):
         self.source_url = config.get("source_url", self.DEFAULT_URL)
         self.variant = config.get("variant", "medqa")
         self.support_spec = config.get("support", {})
+        # scripted (rule-based) patient/moderator is an approximation; the faithful
+        # multi-agent setup needs LLM `support:` (unless split_type is pinned)
+        if "split_type" not in config:
+            self.split_type = "official" if self.support_spec else "approximated"
 
     def load(self) -> list[Sample]:
         h = hashlib.sha256(self.source_url.encode()).hexdigest()[:16]
@@ -503,6 +507,10 @@ class MedAgentBenchAdapter(AgentAdapter):
         if self.refsol_path:
             from .medagentbench_grader import load_refsol
             self._refsol = load_refsol(self.refsol_path)
+        # the built-in grader is an approximation; only the official gated refsol
+        # is leaderboard-comparable (unless the user pins split_type explicitly)
+        if "split_type" not in config:
+            self.split_type = "official" if self.refsol_path else "approximated"
 
     def _load_funcs(self) -> list:
         if self._funcs is None:

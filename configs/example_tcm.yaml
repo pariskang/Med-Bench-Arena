@@ -29,12 +29,13 @@ models:
 
 datasets:
   # --- knowledge (MCQ) ---
-  - id: cmb_tcm
+  - id: cmb_tcm               # CMB-val (280) — a quick check, NOT the official test
     adapter: hf_mcq
     path: FreedomIntelligence/CMB
     data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-val/CMB-val-merge.json
     field_map: {question: question, options: option, answer: answer}
     answer_format: multi
+    split_type: validation    # val split — use cmb_test (catalog_mcq.yaml) for official
     metrics: [mcq_accuracy]
 
   # TCMBench (ywjawmw/TCMBench, arXiv:2406.01126) — the repo publishes a per-type
@@ -59,6 +60,7 @@ datasets:
       - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDT_reverse.json
       - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDT_shuffle.json
       - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/herb_predict.json
+    split_type: demo             # 14 demo items only — NOT the full (gated) TCMBench
     metrics: [mcq_accuracy]
 
   # --- syndrome differentiation 辨证 (judged on the 症状–病机–证型 chain) ---
@@ -68,6 +70,7 @@ datasets:
     source_url: https://raw.githubusercontent.com/zhuyan166/TCMEval/main/evaluation/TCMEval-SDT/data/Train_TCM_Data_v1.json
     field_map: {prompt: "Clinical Data", reference: "Syndrome Differentiation",
                 label: "TCM Syndrome", pathogenesis: "TCM Pathogenesis"}
+    split_type: validation       # only the Train split has gold; test/val are blank
     metrics: [llm_judge, syndrome_chain, bleu, rouge]   # 证型链结构分 + 文本重合 + rubric
 
   # --- prescription 方剂生成 ---
@@ -92,4 +95,5 @@ datasets:
     source_url: https://raw.githubusercontent.com/Medlinker-MG/CSEDB/main/generate/test_sampled.json
     explode: "设计的考题内容.最具代表性的测试case"
     field_map: {prompt: "输入 case", rubric: "规则判断列表", label: "考点.门类"}
+    split_type: sample           # 2-record public sample; full 2,069-item bank is gated
     metrics: [llm_judge]
