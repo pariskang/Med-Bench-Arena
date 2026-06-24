@@ -22,7 +22,8 @@ from .metrics.base import create_metric
 # Import implementation modules so their @register_* decorators run.
 from .providers import mock, litellm_provider, poe, hf  # noqa: F401
 from .datasets import hf_mcq, local_json, agent_env, tcmbench, medbench  # noqa: F401
-from .metrics import mcq, llm_judge, text_match, prescription, syndrome, tcm_struct  # noqa: F401
+from .metrics import (  # noqa: F401
+    mcq, llm_judge, text_match, prescription, syndrome, tcm_struct, numeric)
 
 
 def _safe(s: str) -> str:
@@ -197,8 +198,8 @@ class Runner:
     async def _eval(self, prov: ModelProvider, ds, samples) -> dict[str, Any]:
         preds = await self._predict(prov, ds, samples)
         metrics = []
-        for name in ds.metrics:
-            m = create_metric(name)
+        for name, mcfg in ds.metric_specs:
+            m = create_metric(name, mcfg)
             if m.needs_judge:
                 judge = self._judge_for(ds)
                 if judge is None:

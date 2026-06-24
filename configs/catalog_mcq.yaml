@@ -57,13 +57,27 @@ datasets:
     metrics: [mcq_accuracy]
 
   # ---- Chinese ----------------------------------------------------------
-  - id: cmb                   # FreedomIntelligence/CMB. The HF loader script is
-    adapter: hf_mcq           # broken on datasets>=5, so load the raw JSON file.
+  - id: cmb_test              # FULL official CMB-Exam test (11,200) — gold answers are
+    adapter: hf_mcq           # public on GitHub, joined to the HF questions by `id`.
     path: FreedomIntelligence/CMB
-    data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-val/CMB-val-merge.json
+    data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-test/CMB-test-choice-question-merge.json
     field_map: {question: question, options: option, answer: answer}
     answer_format: multi      # dict options A-F (F often null); answer may be "BCDE"
+    answer_join: {data_files: https://raw.githubusercontent.com/FreedomIntelligence/CMB/main/data/CMB-test-choice-answer.json, key: id, value: answer}
     metrics: [mcq_accuracy]
+
+  # CMB-Exam train (269,359, answers inline) — the large scorable set:
+  # - {id: cmb_train, adapter: hf_mcq, path: FreedomIntelligence/CMB,
+  #    data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-train/CMB-train-merge.json,
+  #    field_map: {question: question, options: option, answer: answer}, answer_format: multi}
+  # CMB-Exam val (280, fully answered) — the quick check:
+  # - {id: cmb_val, adapter: hf_mcq, path: FreedomIntelligence/CMB,
+  #    data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-val/CMB-val-merge.json,
+  #    field_map: {question: question, options: option, answer: answer}, answer_format: multi}
+  # CMB-Clin (74 clinical cases, free-text gold) -> local_json + llm_judge:
+  # - {id: cmb_clin, adapter: local_json, task: open_qa,
+  #    source_url: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Clin/CMB-Clin-qa.json,
+  #    explode: QA_pairs, field_map: {prompt: question, reference: answer}, metrics: [llm_judge]}
 
   - id: cmexam                # williamliujl/CMExam, CSV; options packed inline
     adapter: hf_mcq
@@ -75,9 +89,23 @@ datasets:
     metrics: [mcq_accuracy]
 
   # ---- TCM --------------------------------------------------------------
-  - id: tcmbench_fku          # ywjawmw/TCMBench demo subset (options embedded)
-    adapter: tcmbench
-    source_url: https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/FKU.json
+  - id: tcmbench_demo         # ywjawmw/TCMBench — ALL 14 public demo files (options
+    adapter: tcmbench         # embedded in the stem). -> 20 MCQ items spanning A1/A3/B1
+    source_url:               # types. Full 5,473-Q bank is gated (request from authors).
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/CVR.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/FKU.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/KHC.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/CBF.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/DDST.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/PF.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SCF.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SDDT.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SDT.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/DDST_hard.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDDT_hard.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDT_reverse.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/SDT_shuffle.json
+      - https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/third_level/herb_predict.json
     answer_format: multi
     metrics: [mcq_accuracy]
 

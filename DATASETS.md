@@ -50,16 +50,22 @@ Legend: ✅ open & config-only · ⚠️ open but needs care · 🔒 gated / man
  split: test, field_map: {question: question, options: choices, answer: answer}, answer_format: index}
 ```
 
-### CMB ⚠️
+### CMB ✅ (full test 11,200, gold joined)
 - **Repo:** `FreedomIntelligence/CMB`, config `CMB-Exam`. **Options:** dict `option` keyed
   A–F (unused slots are `null` → dropped by the adapter). **Answer:** letter(s); multi
   e.g. `"BCDE"` when `question_type == 多项选择题`.
-- **Caveats:** (1) the **`test` split has no `answer`** → use **`val`**/`train`. (2) The HF
-  **loading script is broken on `datasets>=5`** → load the raw JSON via `data_files`.
+- **Full test set (11,200):** the HF `CMB-test` questions ship **without** answers, but the
+  gold key is **public on GitHub** (`data/CMB-test-choice-answer.json`, keyed by `id`). The
+  `answer_join` config downloads it and injects `answer` by `id` → the complete, scorable
+  CMB-test (not the 280-item `val`). The HF loading script is broken on `datasets>=5`, so the
+  questions load via raw `data_files`. (`val` 280 / `train` 269,359 remain as commented
+  alternates; `CMB-Clin` 74 free-text cases → `local_json` + `llm_judge`.)
 ```yaml
 {path: FreedomIntelligence/CMB,
- data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-val/CMB-val-merge.json,
- field_map: {question: question, options: option, answer: answer}, answer_format: multi}
+ data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-test/CMB-test-choice-question-merge.json,
+ field_map: {question: question, options: option, answer: answer}, answer_format: multi,
+ answer_join: {data_files: https://raw.githubusercontent.com/FreedomIntelligence/CMB/main/data/CMB-test-choice-answer.json,
+               key: id, value: answer}}
 ```
 
 ### CMExam ⚠️
@@ -73,15 +79,23 @@ Legend: ✅ open & config-only · ⚠️ open but needs care · 🔒 gated / man
  options_inline: true, field_map: {question: Question, options: Options, answer: Answer}, answer_format: multi}
 ```
 
-### TCMBench ⚠️ (`tcmbench` adapter)
-- **Source:** `ywjawmw/TCMBench`, data under **`data_demo/`** (the bare `data/` 404s; demo
-  subset only — full 5,473-Q set isn't public). Each file is a JSON object
+### TCMBench ⚠️ (`tcmbench` adapter — full public demo set)
+- **Source:** `ywjawmw/TCMBench`, data under **`data_demo/`** (the bare `data/` 404s). The
+  repo publishes a per-type **demo** set only — **one worked example per question type** —
+  so the full public corpus is 14 files (3 first-level + 6 second-level + 5 third-level)
+  → **20 MCQ items**. The full 5,473-Q bank is **gated** (request from the authors); drop its
+  path(s) into the same `source_url` list to score it. Each file is a JSON object
   `{type, prefix_prompt, keywords, example}`; questions under `example`.
-- **Options are embedded in the question text** (`A．…`); **answer** is a letter list.
-  B1/A3 files (KHC/CVR) use a nested `share_content` + `question[].sub_question` shape —
-  the adapter handles both.
+- **Options are embedded in the question text** (`A．…`); **answer** is a letter list. The
+  B1/A3 files (CVR/KHC/SDT/SDT_reverse/SDT_shuffle) use a nested `share_content` +
+  `question[].sub_question` shape — the adapter renders **vignette + sub-question + options
+  once** (no double-render; the shared 病例 is preserved). `source_url` accepts a **list** of
+  files → concatenated. Non-MCQ records (e.g. `herb_predict`) are skipped.
 ```yaml
-{adapter: tcmbench, source_url: https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/FKU.json}
+{adapter: tcmbench, source_url: [
+   https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/first_level/CVR.json,
+   https://raw.githubusercontent.com/ywjawmw/TCMBench/main/data_demo/second_level/SDT.json,
+   ...all 14 demo files (see configs/example_tcm.yaml)... ]}
 ```
 
 ### TCM-Ladder ✅ (multimodal)
@@ -91,12 +105,15 @@ Legend: ✅ open & config-only · ⚠️ open but needs care · 🔒 gated / man
   columns `A`–`E`** (`E` empty in ~2k 4-option rows → the adapter drops the blank
   trailing slot); `answer` = letter(s), multi-correct concatenated ("ABCDE") → `multi`.
   Also `category` (subject), `type` (Single/Multiple), `lang`.
-- **`visual.parquet`** (8,802): tongue + herb images as **raw JPEG bytes** in a parquet
-  `binary` column (handled by `_encode_image`), `answer` letter, `category` ∈ {herb, tongue}.
-  **No question/option text** — the 4-image MCQ is assembled at eval time and its
-  distractors aren't in the file; wired as image→modality classification via
-  `question_text` + `inject_options: [herb, tongue]` (`config/example_tcm_ladder.yaml`).
-  ~730 MB — use `--limit`. No pulse/audio is released on HF.
+- **`visual.parquet`** (8,802): each row is a **pre-rendered 4-option MCQ image** as raw
+  bytes (handled by `encode_images`), with the question text, the candidate options and the
+  **A/B/C/D labels all baked into the image** (herb = a 2×2 photo grid "which is X?"; tongue =
+  1 photo + 4 text options). Columns: `id, image, answer, category ∈ {herb,tongue}, lang`.
+  Gold `answer` is the **letter A–D** — so the FAITHFUL task is image→letter: the config sets
+  a `question_text` instruction, `prompt_template: "{question}"` (no text block — options are
+  in the image), `inject_options: [A,B,C,D]` and `answer_format: letter`
+  (`configs/example_tcm_ladder.yaml`). A vision model is required. ~730 MB — use `--limit` or
+  stream. No pulse/audio is released on HF.
 ```yaml
 {adapter: hf_mcq, format: parquet,
  data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/main/multiChoice.parquet,
@@ -121,15 +138,21 @@ Legend: ✅ open & config-only · ⚠️ open but needs care · 🔒 gated / man
 The judge consumes the raw answer; the adapter maps `prompt` (string *or* chat
 messages), an optional `rubric` (normalized from many shapes), `reference`, and `label`.
 
-### HealthBench ✅
+### HealthBench ✅ (faithful per-criterion grading)
 - **Source:** OpenAI simple-evals JSONL (Azure blob). `prompt` = list of `{role,content}`
   chat turns. `rubrics` = list of `{criterion, points (may be NEGATIVE), tags}`.
-  Variants: `2025-05-07-…_oss_eval.jsonl` (5000) · `hard_…` (1000) · `consensus_…` (3671).
-- **Caveat:** negative points — score = met-points / Σ(positive points), clipped (the
-  `llm_judge` metric implements this).
+  All three variants are wired: `2025-05-07-…_oss_eval.jsonl` (5000) · `hard_…` (1000) ·
+  `consensus_…` (3671) — same schema, just swap `source_url`.
+- **Faithful grading:** set the metric to `{name: llm_judge, per_criterion: true}` and the
+  `llm_judge` metric runs the **official algorithm** — one judge call per rubric item using
+  the verbatim simple-evals grader template, a boolean `criteria_met`, then
+  `score = Σ(signed met points) / Σ(positive points)`, clipped at the example level. (Without
+  `per_criterion` it falls back to a single weighted-rubric call.) Numbers still track the
+  judge, so **use GPT-4.1** (HealthBench's official grader) for comparable results.
 ```yaml
 {task: open_qa, source_url: https://openaipublic.blob.core.windows.net/simple-evals/healthbench/2025-05-07-06-14-12_oss_eval.jsonl,
- field_map: {prompt: prompt, rubric: rubrics, reference: ideal_completions_data}}
+ field_map: {prompt: prompt, rubric: rubrics, reference: ideal_completions_data},
+ metrics: [{name: llm_judge, per_criterion: true}]}   # judge: gpt-4.1
 ```
 
 ### LLMEval-Med ✅
@@ -173,12 +196,18 @@ messages), an optional `rubric` (normalized from many shapes), `reference`, and 
  field_map: {prompt: "输入 case", rubric: "规则判断列表", label: "考点.门类"}}
 ```
 
-### MedSafetyBench ✅
-- **Source:** `AI4LIFE-GROUP/med-safety-bench`, CSV `datasets/test/gpt4/med_safety_demonstrations_category_{1..9}.csv`
-  (cols `'', harmful_medical_request, safe_response`). No rubric field → default **安全**
-  rubric judges refusal/harm vs. `safe_response`. Research-only terms.
+### MedSafetyBench ✅ (full 9 categories × 2 sources)
+- **Source:** `AI4LIFE-GROUP/med-safety-bench`, CSV
+  `datasets/test/{gpt4,llama2}/med_safety_demonstrations_category_{1..9}.csv`
+  (cols `'', harmful_medical_request, safe_response`). The **9 categories = the AMA
+  Principles of Medical Ethics**; the full test set is **all 18 files** (9 categories ×
+  {gpt4, llama2} attacker) — `source_url` takes the **list** and concatenates them (≈900
+  items). No rubric field → default **安全** rubric judges refusal/harm vs. `safe_response`.
+  Research-only terms.
 ```yaml
-{task: safety, source_url: https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_1.csv,
+{task: safety, source_url: [   # all 18 = full test set (see configs/example_open_safety.yaml)
+   .../test/gpt4/med_safety_demonstrations_category_1.csv, ... category_9.csv,
+   .../test/llama2/med_safety_demonstrations_category_1.csv, ... category_9.csv],
  field_map: {prompt: harmful_medical_request, reference: safe_response}}
 ```
 
@@ -186,15 +215,20 @@ messages), an optional `rubric` (normalized from many shapes), `reference`, and 
 
 ## 3. Agent benchmarks (`agentclinic`, `medagentbench`)
 
-### AgentClinic ✅ (offline-capable)
-- **Source:** `SamuelSchmidgall/AgentClinic` (MIT). Scenario JSONL ships in-repo:
-  `agentclinic_medqa.jsonl` (215), `agentclinic_nejm.jsonl` (120).
-- **MedQA schema:** top-level `OSCE_Examination.{Objective_for_Doctor, Patient_Actor,
-  Physical_Examination_Findings, Test_Results, Correct_Diagnosis}`. **Doctor actions:**
-  free text + `REQUEST TEST: …` / `REQUEST IMAGES` / `DIAGNOSIS READY: …`; ~20-turn budget;
-  moderator LLM judges the diagnosis. pass^k is *not* in the original repo — we add it.
-- **Offline:** patient/measurement/moderator default to rule-based (read from the scenario);
-  pass `support: {patient: <id>, moderator: <id>}` to use LLM agents.
+### AgentClinic ✅ (MedQA + NEJM, LLM-agent faithful)
+- **Source:** `SamuelSchmidgall/AgentClinic` (MIT). Full released scenario JSONL:
+  `agentclinic_medqa_extended.jsonl` (**214** OSCE cases; the 107-case original is
+  `agentclinic_medqa.jsonl`) and `agentclinic_nejm_extended.jsonl` (**120** image cases; the
+  15-case original is `agentclinic_nejm.jsonl`). Both variants are wired (`variant: medqa|nejm`).
+- **MedQA schema:** `OSCE_Examination.{Objective_for_Doctor, Patient_Actor,
+  Physical_Examination_Findings, Test_Results, Correct_Diagnosis}`. **NEJM schema** (flat):
+  `{question, patient_info, physical_exams, answers:[{text,correct}], image_url}` — needs a
+  **vision** doctor model. **Doctor actions:** free text + `REQUEST TEST: …` / `REQUEST IMAGES`
+  / `DIAGNOSIS READY: …`; ~20-turn budget. pass^k is *not* in the original repo — we add it.
+- **Faithful setup (the paper):** patient + measurement + moderator are each their own LLM —
+  pass `support: {patient: <id>, measurement: <id>, moderator: <id>}` and the runner resolves
+  them to providers. **Offline fallback:** omit `support:` and those roles run rule-based from
+  the scenario (a documented approximation; the doctor still needs a model).
 - 🔒 **AgentClinic-MIMIC-IV** needs PhysioNet credentialing (not redistributable).
 
 ### MedAgentBench ⚠️ (live FHIR server required) — wired
@@ -207,11 +241,25 @@ messages), an optional `rubric` (normalized from many shapes), `reference`, and 
   (the paper explicitly avoids pass^k for healthcare).
 - **Grading:** `eval(case_data, results, fhir_api_base)` →
   `getattr(refsol, case_data['id'].split('_')[0])`. We implement this exactly:
-  - **built-in grader** (default, no gated file): query tasks (have `sol`) compare the
-    `FINISH` answer to gold (string-set + numeric tolerance); action tasks verify a 2xx
-    write referencing `eval_MRN` landed (a documented approximation of the per-task rules).
-  - **official `refsol.py`** (gated, project Box link): set `refsol_path:` and it is called
-    as `getattr(refsol, task_id)(task, answer, fhir_base)`.
+  - **official `refsol.py`** (gated, project Box link — deliberately withheld to stop
+    benchmark gaming): set `refsol_path:` and it is called as
+    `getattr(refsol, task_id)(task, answer, fhir_base)`. **This is the faithful path** — use
+    it for real numbers.
+  - **built-in grader** (default, no gated file): dispatches **per task id** and validates the
+    POST **payload**, not just MRN presence. Reconstructed from the public task instructions
+    + the published methodology:
+    - *query* tasks (task1/2/4/6/7): must issue **no POST**; `task1` ships gold → exact /
+      numeric match. Tasks 2/4/6/7 ship no gold → the **value is unverifiable offline** and is
+      reported as such (never a false pass) — supply `refsol_path` to score them.
+    - *action* tasks (task3/5/8/9/10): require a 2xx POST of the **expected `resourceType`**
+      (Observation / MedicationRequest / ServiceRequest) with `subject → Patient/{eval_MRN}`
+      and the **right code** (task3 flowsheet `BP` + value; task8 SNOMED `306181000000106` +
+      SBAR note; task5/9 NDC; task9/10 LOINC). Codes are pulled from each task's text so all
+      30 variants/task are covered. The **conditional** tasks (5/9/10): a placed order is
+      validated by shape; a *no-op* (ordering nothing) needs live lab values to judge and is
+      flagged `undecidable_noop` rather than passed.
+  - The grader is **conservative — it never reports a false success**; everything that needs a
+    live-FHIR gold is flagged for `refsol_path`.
 - **Run it:** start the FHIR server, then point `fhir_base` at it:
   ```bash
   docker pull jyxsu6/medagentbench:latest
@@ -225,6 +273,44 @@ messages), an optional `rubric` (normalized from many shapes), `reference`, and 
   mock FHIR server (`tests/test_medagentbench.py`).
 
 ---
+
+## Batch 2 — additional datasets (verified 2026-06)
+
+Configs live in `configs/catalog_en_med.yaml`, `catalog_multimodal.yaml`,
+`catalog_cn_tcm.yaml`. ✅ = config-only · ⚠️ = one-time prep · 🔒 = gated/unreleased.
+
+### English QA / reasoning / calc / hallucination
+| Dataset | Access | Adapter / notes |
+|---|---|---|
+| **MedXpertQA** ✅ | `TsinghuaC3I/MedXpertQA` `Text`(2450)/`MM`(2000) | `hf_mcq`, dict options A–J, gold `label` letter. MM: `image: images` (filenames) + unzip `images.zip`, set `image_base`. |
+| **MedAgentsBench** ✅ | `xk-huang/medagents-benchmark` | `hf_mcq`, 10 configs, `split: test_hard`, dict options, gold `answer_idx`. (≠ MedAgentBench.) |
+| **MedCalc-Bench** ✅ | `ncbi/MedCalc-Bench-v1.2` CSV (v1.0/1.1 gated) | `local_json`+`numeric_match`; `prompt: [Patient Note, Question]`, map `lower_limit`/`upper_limit` (range check, ±5% decimal / exact else). |
+| **MedR-Bench** ✅ | GitHub raw JSON (HF gated) | `local_json`+`llm_judge`; JSON keyed by PMCID → auto-flattened; gold `generate_case.diagnosis_results`. |
+| **MedHallu** ✅ | `UTAustin-AIHealth/MedHallu` `pqa_labeled`/`pqa_artificial` | `hf_mcq`, 2-col options `[Ground Truth, Hallucinated Answer]`, gold = `Hallucinated Answer`, `answer_format: text`, `shuffle_options: true` (de-bias). |
+| **Med-HALT** ⚠️ | `openlifescienceai/Med-HALT` | `reasoning_nota` → `hf_mcq` (`options` is a stringified dict, auto-parsed; `correct_index`). FCT (yes/no), fake (judge), IR_* (gen) need prep/judge. |
+| **MLEC-QA** ✅ | `shuyuej/MLEC-QA-Benchmark` (new HF mirror, test) | `hf_mcq`, dict options A–E, gold `answer` letter. (Full 5-subset set still Google-Drive.) |
+| **MediQ** ✅ | `stellalisy/MediQ` `all_dev_good.jsonl` | `hf_mcq` single-turn upper-bound, **or** `adapter: mediq` (interactive proactive-questioning: facts revealed on relevant questions; `pass_k` → accuracy + avg_turns + timeout_rate). |
+
+### Multimodal VQA
+| Dataset | Access | Adapter / notes |
+|---|---|---|
+| **MedFrameQA** ✅ | `SuhaoYu1020/MedFrameQA` parquet | `hf_mcq`, multi-image `image: [image_1..image_5]` (embedded HF Image), `correct_answer` letter. |
+| **SLAKE-en** ✅ | `mdwiratathya/SLAKE-vqa-english` parquet | `local_json` open VQA, embedded `image`, `llm_judge`. (Bilingual `BoKelvin/SLAKE` needs `imgs.zip`.) |
+| **TCM-Vision-Benchmark** ⚠️ | `FreedomIntelligence/TCM-Vision-Benchmark` JSON | `hf_mcq`, 7204 image MCQ (Tongue 768); `image` = path in `tcm_bench_images.zip` (775MB) → unzip, set `image_base`. |
+| **OmniMedVQA** ✅ | `foreverbeliever/OmniMedVQA` (`OmniMedVQA.zip` 10.7GB) | `hf_mcq`, `image_zip` auto-fetch (zip holds images **and** QA JSONs); options `option_A..D`, `gt_answer` text. |
+| **PMC-VQA** ✅ | `RadGenome/PMC-VQA` (`images.zip` 18.9GB) | `hf_mcq`, `image_zip` auto-fetch; `Choice A..D`, `Answer_label` letter, `Figure_path`. |
+| **MedBookVQA** ✅ | `slyipae1/MedBookVQA` (`figures.zip` 839MB, CC-BY-NC) | `hf_mcq`, `image_zip` auto-fetch; options `[Answer, Distractors]` (flattened) + `shuffle_options`, `image_strip: "../"`. |
+| GMAI-MMBench 🔒 | `OpenGVLab/GMAI-MMBench` (gated) | VLMEvalKit TSV; `image` is a base64 string (`encode_images` auto-detects). Use `*_VAL.tsv`. |
+
+### Chinese-med / TCM extensions
+| Dataset | Access | Adapter / notes |
+|---|---|---|
+| **PromptCBLUE** ✅ | `tchenglv/PromptCBLUE` `dev.json` (JSONL!) | `local_json`+`f1`/`rouge`; `{input, target, task_dataset}`. (orig `michael-wzhu` id is dead; CBLUE raw is submission-only.) |
+| **TCM-BEST4SDT** ✅ | `DYJG-research/TCM-BEST4SDT` raw JSON | MCQ (3 files, `option` dict, multi) → `hf_mcq`; SDT (300, open) → `local_json`+`llm_judge`/`syndrome_chain`. |
+| **TCMEval-PA** ⚠️ | Figshare `.xlsx` (`ndownloader.figshare.com/files/56581880`) | 处方审核 MCQ; convert xlsx→json, `options_inline: true`, `answer_format: multi`. (≠ TCMEval-SDT.) |
+| **TCM-Text-Exams** ⚠️ | `FreedomIntelligence/TCM-Text-Exams` JSON | `hf_mcq` after flattening the dict-of-5-sections to an array (`load_dataset("json")` errors on the dict). |
+
+Prep one-liners: **TCM-Text-Exams** `json.dump([{**r,"section":s} for s,recs in d.items() for r in recs], ...)`; **TCMEval-PA** `openpyxl` → rows → json; both then load via `hf_mcq` `data_files`.
 
 ## Cross-cutting gotchas
 

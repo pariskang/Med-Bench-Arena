@@ -123,6 +123,74 @@ def test_llm_judge_signed_points_penalizes():
     assert score.value == 0.0
 
 
+def test_hf_mcq_shuffle_preserves_gold():
+    ad = _mcq(answer_format="letter")
+    ad.fm["options"] = "option"
+    ad.shuffle_options = True
+    # MedHallu-style fixed correct-first 2-option layout; gold must follow the shuffle
+    seen_positions = set()
+    for i in range(6):
+        s = ad._row_to_sample({"q": "Q", "option": {"A": "Ground Truth", "B": "Hallucinated"},
+                               "a": "B"}, None, i)
+        gi = s.reference["index"]
+        assert s.choices[gi] == "Hallucinated"     # gold still points to the right text
+        seen_positions.add(gi)
+    assert seen_positions == {0, 1}                  # the correct answer moves around
+
+
+def test_hf_mcq_stringified_dict_options():
+    # Med-HALT: options stored as a stringified python dict
+    ad = _mcq(answer_format="index")
+    ad.fm["options"] = "options"
+    choices, keys = ad._resolve_options(
+        {"options": "{'0': 'Bacterial', '1': 'Neutrophil', '2': 'None of the above', '3': 'Spiro'}"})
+    assert choices == ["Bacterial", "Neutrophil", "None of the above", "Spiro"] and keys == []
+    # a "correct answer" key (Med-HALT FCT) is stripped
+    c2, _ = ad._resolve_options({"options": "{'A': 'x', 'B': 'y', 'correct answer': 'x'}"})
+    assert c2 == ["x", "y"]
+
+
+def test_encode_images_base64_and_bytes():
+    from medeval.schema import encode_images
+    assert encode_images("A" * 300)[0].startswith("data:image/jpeg;base64,")   # bare base64 str
+    assert encode_images(b"\x89PNG....")[0].startswith("data:image/png;base64,")  # raw bytes
+    assert encode_images("Images/a.png", "/b/") == ["/b/Images/a.png"]            # path stays a path
+
+
+def test_local_json_dict_of_dicts_and_prompt_list():
+    # MedR-Bench: JSON dict keyed by id with dict values -> flattened
+    data = {"PMC1": {"raw_case": "case one", "gen": {"dx": "A"}},
+            "PMC2": {"raw_case": "case two", "gen": {"dx": "B"}}}
+    with tempfile.TemporaryDirectory() as d:
+        fp = Path(d) / "mrb.json"
+        fp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        ad = LocalJSONAdapter({"id": "m", "adapter": "local_json", "task": "open_qa",
+                               "path": str(fp),
+                               "field_map": {"prompt": "raw_case", "reference": "gen.dx"}})
+        samples = ad.load()
+    assert len(samples) == 2 and samples[0].reference["reference"] == "A"
+    # prompt as a list of columns -> joined (MedCalc-Bench Patient Note + Question)
+    with tempfile.TemporaryDirectory() as d:
+        fp = Path(d) / "mc.jsonl"
+        fp.write_text(json.dumps({"note": "Patient is 70.", "q": "What is the score?"}), encoding="utf-8")
+        ad = LocalJSONAdapter({"id": "c", "adapter": "local_json", "task": "open_qa",
+                               "path": str(fp), "field_map": {"prompt": ["note", "q"]}})
+        s = ad.load()[0]
+    assert "Patient is 70." in s.messages[-1].content and "What is the score?" in s.messages[-1].content
+
+
+def test_local_json_attaches_image():
+    rec = {"q": "describe this", "a": "lung", "img": "https://x/scan.jpg"}
+    with tempfile.TemporaryDirectory() as d:
+        fp = Path(d) / "vqa.jsonl"
+        fp.write_text(json.dumps(rec), encoding="utf-8")
+        ad = LocalJSONAdapter({"id": "v", "adapter": "local_json", "task": "open_qa",
+                               "path": str(fp),
+                               "field_map": {"prompt": "q", "reference": "a", "image": "img"}})
+        s = ad.load()[0]
+    assert s.messages[-1].images == ["https://x/scan.jpg"]
+
+
 def test_agentclinic_scripted_env():
     """The scripted patient / measurement / moderator work with no LLM calls."""
     osce = {"OSCE_Examination": {

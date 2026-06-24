@@ -49,6 +49,18 @@ def test_hf_mcq_image_encoding_variants():
         ["http://u/1.png", "https://host/imgs/2.png"]
 
 
+def test_image_strip_and_option_flatten():
+    from medeval.schema import encode_images
+    # image_strip drops a leading prefix (MedBookVQA ../figures/x.jpg)
+    assert encode_images("../figures/x.jpg", "/d/", strip="../") == ["/d/figures/x.jpg"]
+    assert encode_images({"path": "../figures/y.jpg"}, "/d/", strip="../") == ["/d/figures/y.jpg"]
+    # list-valued option columns are flattened (MedBookVQA [Answer, Distractors])
+    ad = HFMCQAdapter({"id": "t", "path": "x", "answer_format": "text",
+                       "field_map": {"question": "q", "options": ["Answer", "Distractors"], "answer": "Answer"}})
+    choices, keys = ad._resolve_options({"Answer": "correct", "Distractors": ["w1", "w2", "w3"]})
+    assert choices == ["correct", "w1", "w2", "w3"] and keys == []
+
+
 def test_multimodal_mcq_end_to_end_with_mock_vision():
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)

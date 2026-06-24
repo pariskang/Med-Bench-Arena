@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from ..schema import Message, Prediction, Sample, TaskType
+from ..schema import Message, Prediction, Sample, TaskType, encode_images
 from .base import DatasetAdapter, register_dataset
 
 CACHE_DIR = Path(os.environ.get("MEDEVAL_CACHE", "data/cache"))
@@ -79,40 +79,53 @@ class LocalJSONAdapter(DatasetAdapter):
         self.explode = config.get("explode")
         self.fm = dict(config.get("field_map", {}))
         self.system_prompt = config.get("system_prompt")
+        self.image_base = config.get("image_base", "")
+        self.image_zip = config.get("image_zip")   # auto download+unzip images archive
+        self.image_strip = config.get("image_strip", "")
         self.prompt_template = config.get("prompt_template")
-        if not self.metrics:
+        if not self.metric_specs:
+            self.metric_specs = [("llm_judge", {})]
             self.metrics = ["llm_judge"]
 
     # --- source acquisition ----------------------------------------------
-    def _resolve_file(self) -> Path:
+    def _resolve_files(self) -> list[Path]:
+        """One or more source files. ``source_url`` / ``path`` may be a list (e.g.
+        MedSafetyBench's 9 category CSVs) — they are concatenated."""
         if self.path:
-            return Path(self.path)
-        url = self.source_url
-        if not url and self.hf:
+            paths = self.path if isinstance(self.path, list) else [self.path]
+            return [Path(p) for p in paths]
+        urls = self.source_url
+        if not urls and self.hf:
             repo, fname = self.hf["repo"], self.hf["file"]
             branch = self.hf.get("revision", "main")
-            url = f"https://huggingface.co/datasets/{repo}/resolve/{branch}/{fname}"
-        if not url:
+            urls = f"https://huggingface.co/datasets/{repo}/resolve/{branch}/{fname}"
+        if not urls:
             raise ValueError(f"{self.id}: need source_url, path, or hf")
+        urls = urls if isinstance(urls, list) else [urls]
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        ext = self._infer_ext(url)
-        h = hashlib.sha256(url.encode()).hexdigest()[:16]
-        dest = CACHE_DIR / f"{self.id}_{h}{ext}"
-        if not dest.exists():
-            req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
-            with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
-                f.write(r.read())
-        return dest
+        out: list[Path] = []
+        for url in urls:
+            h = hashlib.sha256(url.encode()).hexdigest()[:16]
+            dest = CACHE_DIR / f"{self.id}_{h}{self._infer_ext(url)}"
+            if not dest.exists():
+                req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
+                with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
+                    f.write(r.read())
+            out.append(dest)
+        return out
 
     def _infer_ext(self, url_or_path: str) -> str:
         low = url_or_path.lower()
-        for ext in (".jsonl", ".json", ".csv", ".tsv"):
+        for ext in (".jsonl", ".json", ".csv", ".tsv", ".parquet"):
             if ext in low:
                 return ext
         return ".json"
 
     def _read_records(self, fp: Path) -> list[dict[str, Any]]:
         fmt = self.format or self._infer_ext(str(fp)).lstrip(".")
+        if fmt == "parquet":  # binary; embedded-image open VQA (e.g. SLAKE-en)
+            import datasets as _ds
+            return [dict(r) for r in _ds.Dataset.from_parquet(str(fp))]
         text = fp.read_text(encoding="utf-8")
         if fmt in ("jsonl",):
             return [json.loads(line) for line in text.splitlines() if line.strip()]
@@ -133,12 +146,23 @@ class LocalJSONAdapter(DatasetAdapter):
                     flat.extend(x for x in v if isinstance(x, dict))
                 if flat:
                     return flat
+            # dict keyed by id with dict values (e.g. MedR-Bench keyed by PMCID)
+            dict_vals = [v for v in data.values() if isinstance(v, dict)]
+            if dict_vals and len(dict_vals) == len(data):
+                for k, v in zip(data.keys(), dict_vals):
+                    v.setdefault("id", k)
+                return dict_vals
             return [data]
         return data
 
     # --- loading ----------------------------------------------------------
     def load(self) -> list[Sample]:
-        records = self._read_records(self._resolve_file())
+        if self.image_zip:
+            from ..assets import ensure_image_base
+            self.image_base = ensure_image_base(self.image_zip, self.image_base or None)
+        records: list[dict[str, Any]] = []
+        for fp in self._resolve_files():
+            records.extend(self._read_records(fp))
         samples: list[Sample] = []
         for ridx, root in enumerate(records):
             items = self._explode(root)
@@ -166,8 +190,13 @@ class LocalJSONAdapter(DatasetAdapter):
         return v
 
     def _build_sample(self, root: dict, item: dict, ridx: int, iidx: int) -> Sample | None:
-        raw_prompt = self._resolve(self.fm.get("prompt"), root, item)
-        if raw_prompt is None:
+        pfield = self.fm.get("prompt")
+        if isinstance(pfield, list):  # join several columns (e.g. Patient Note + Question)
+            parts = [_stringify(self._resolve(p, root, item)) for p in pfield]
+            raw_prompt = "\n\n".join(p for p in parts if p)
+        else:
+            raw_prompt = self._resolve(pfield, root, item)
+        if raw_prompt is None or raw_prompt == "":
             return None
         messages = self._to_messages(raw_prompt, root, item)
         if not messages:
@@ -217,11 +246,19 @@ class LocalJSONAdapter(DatasetAdapter):
                 content = m.get("content", "")
                 if content:
                     msgs.append(Message(role, str(content)))
-            return msgs
-        text = _stringify(raw_prompt)
-        if self.prompt_template:
-            text = self.prompt_template.format(prompt=text)
-        msgs.append(Message("user", text))
+        else:
+            text = _stringify(raw_prompt)
+            if self.prompt_template:
+                text = self.prompt_template.format(prompt=text)
+            msgs.append(Message("user", text))
+        # multimodal: attach images (open VQA) to the last user turn
+        imgs = encode_images(self._resolve(self.fm.get("image"), root, item),
+                             self.image_base, self.image_strip)
+        if imgs:
+            for m in reversed(msgs):
+                if m.role == "user":
+                    m.images = imgs
+                    break
         return msgs
 
     def _stringify_ref(self, value: Any) -> str:

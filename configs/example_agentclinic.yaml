@@ -4,10 +4,11 @@
 #
 #   python -m medeval run configs/example_agentclinic.yaml --limit 5
 #
-# Patient / measurement / moderator run *scripted* (rule-based, from the scenario)
-# by default, so the whole thing runs offline — only the doctor needs a model.
-# To use the real LLM-backed patient/moderator, add a `support:` block mapping
-# roles to model ids (see commented lines).
+# FAITHFUL SETUP (the original paper): patient + measurement + moderator are each
+# their own LLM. Provide them via a `support:` block (see below) — that is the real
+# multi-agent dialogue AgentClinic measures. For an offline/no-key smoke run you may
+# omit `support:`; the env then drives those roles *rule-based* from the scenario
+# (a documented approximation — the doctor still needs a model).
 run:
   output_dir: ./results/agentclinic
   concurrency: 8
@@ -17,29 +18,34 @@ eval:
   gen: {temperature: 0.0, max_tokens: 512}
 
 models:
-  - {id: mock-model, type: mock, behavior: auto}
-  # Real doctor model:
-  # - {id: claude, type: poe, bot_name: Claude-Opus-4.7, api_key_env: POE_API_KEY}
-  # Optional LLM agents for patient/moderator:
-  # - {id: patient-llm, type: litellm, model: gpt-4o-mini, api_key_env: OPENAI_API_KEY}
+  - {id: mock-model, type: mock, behavior: auto}        # offline doctor (smoke)
+  # --- real runs: a doctor model + the patient/measurement/moderator LLMs ---
+  # - {id: doctor,    type: poe,     bot_name: Claude-Opus-4.7, api_key_env: POE_API_KEY}
+  # - {id: patient,   type: litellm, model: openai/gpt-4o-mini, api_key_env: OPENAI_API_KEY}
+  # - {id: moderator, type: litellm, model: openai/gpt-4o-mini, api_key_env: OPENAI_API_KEY}
+  # - {id: gpt-4o,    type: litellm, model: openai/gpt-4o,      api_key_env: OPENAI_API_KEY}  # vision (NEJM)
 
 datasets:
-  - id: agentclinic_medqa     # 215 OSCE cases ship in the AgentClinic repo
-    adapter: agentclinic
+  - id: agentclinic_medqa     # FULL released MedQA-OSCE set (214 cases; the 107-case
+    adapter: agentclinic      # original is agentclinic_medqa.jsonl)
     variant: medqa
-    source_url: https://raw.githubusercontent.com/SamuelSchmidgall/AgentClinic/main/agentclinic_medqa.jsonl
+    source_url: https://raw.githubusercontent.com/SamuelSchmidgall/AgentClinic/main/agentclinic_medqa_extended.jsonl
     max_turns: 20             # AgentClinic's default inference budget
     k: 3                      # rollouts per case for pass^k
     metrics: [pass_k]
-    # support: {patient: patient-llm, moderator: patient-llm}   # else scripted/offline
+    # Faithful multi-agent dialogue (omit for offline scripted patient/moderator):
+    # support: {patient: patient, measurement: patient, moderator: moderator}
 
-  # AgentClinic-NEJM (image cases) — same adapter, variant: nejm:
-  # - id: agentclinic_nejm
-  #   adapter: agentclinic
-  #   variant: nejm
-  #   source_url: https://raw.githubusercontent.com/SamuelSchmidgall/AgentClinic/main/agentclinic_nejm.jsonl
-  #   metrics: [pass_k]
-  #
-  # AgentClinic-MIMIC-IV needs PhysioNet credentialing (not redistributable).
-  # MedAgentBench (adapter: medagentbench) needs a running HAPI-FHIR Docker server
-  # + the gated refsol.py grader — see the README.
+  - id: agentclinic_nejm      # FULL released NEJM image-case set (120 cases). Needs a
+    adapter: agentclinic      # vision doctor model (each case ships an image_url).
+    variant: nejm
+    source_url: https://raw.githubusercontent.com/SamuelSchmidgall/AgentClinic/main/agentclinic_nejm_extended.jsonl
+    max_turns: 20
+    k: 3
+    metrics: [pass_k]
+    # support: {patient: patient, measurement: patient, moderator: moderator}
+
+  # The 107-/15-case originals are still available at agentclinic_medqa.jsonl /
+  # agentclinic_nejm.jsonl. AgentClinic-MIMIC-IV needs PhysioNet credentialing
+  # (not redistributable). MedAgentBench (adapter: medagentbench) needs a running
+  # HAPI-FHIR Docker server + optionally the gated refsol.py grader — see README.

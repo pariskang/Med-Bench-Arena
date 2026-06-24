@@ -59,12 +59,44 @@ ACTION = {"id": "task3_1", "instruction": "Record BP 118/77 for S2380121.",
 def test_parse_finish_and_builtin_grade():
     assert parse_finish('["S6534835"]') == ["S6534835"]
     assert parse_finish("[123.0]") == [123.0]
-    ok, _ = builtin_grade(QUERY, ["S6534835"], "x", [])
-    assert ok
+    # query task (task1 ships gold) -> exact match + no illegal write
+    ok, d = builtin_grade(QUERY, ["S6534835"], "x", [])
+    assert ok and d["mode"] == "query"
     ok2, _ = builtin_grade(QUERY, ["WRONG"], "x", [])
     assert not ok2
-    # numeric tolerance
-    assert builtin_grade({"id": "task5_1", "sol": ["98.6"]}, ["98.60"], "x", [])[0]
+    # a query task that illegally POSTs must fail even with the right answer
+    bad_write = [{"status": 201, "body": {"resourceType": "Observation"}}]
+    assert not builtin_grade(QUERY, ["S6534835"], "x", bad_write)[0]
+    # numeric tolerance on a real query task (task2 = age)
+    assert builtin_grade({"id": "task2_1", "eval_MRN": "S1"}, ["98.60"],
+                         "x", [], )[0] is False  # no shipped gold -> value-unverified
+    assert builtin_grade({"id": "task2_1", "sol": ["98.6"], "eval_MRN": "S1"},
+                         ["98.60"], "x", [])[0]   # explicit gold -> numeric match
+
+    # --- action-task payload validation (the upgraded grader) -------------
+    mrn = ACTION["eval_MRN"]
+    good_bp = [{"status": 201, "body": {
+        "resourceType": "Observation", "code": {"text": "BP"},
+        "subject": {"reference": f"Patient/{mrn}"}, "valueString": "118/77 mmHg"}}]
+    assert builtin_grade(ACTION, [], "x", good_bp)[0]                    # correct payload
+    wrong_rt = [{"status": 201, "body": {
+        "resourceType": "MedicationRequest", "code": {"text": "BP"},
+        "subject": {"reference": f"Patient/{mrn}"}, "valueString": "118/77"}}]
+    assert not builtin_grade(ACTION, [], "x", wrong_rt)[0]               # wrong resourceType
+    wrong_pt = [{"status": 201, "body": {
+        "resourceType": "Observation", "code": {"text": "BP"},
+        "subject": {"reference": "Patient/SXXXX"}, "valueString": "118/77"}}]
+    assert not builtin_grade(ACTION, [], "x", wrong_pt)[0]               # wrong patient
+
+    # conditional action (task5 IV-Mg): a no-op is flagged undecidable, not passed
+    t5 = {"id": "task5_1", "eval_MRN": "S9",
+          "instruction": "order IV magnesium", "context": "NDC 0338-1715-40"}
+    ok5, d5 = builtin_grade(t5, [], "x", [])
+    assert (not ok5) and d5.get("undecidable_noop")
+    good_mg = [{"status": 201, "body": {
+        "resourceType": "MedicationRequest", "subject": {"reference": "Patient/S9"},
+        "medicationCodeableConcept": {"coding": [{"code": "0338-1715-40"}]}}}]
+    assert builtin_grade(t5, [], "x", good_mg)[0]                        # valid order shape
 
 
 def test_real_get_post_finish_against_mock_fhir():
@@ -92,7 +124,9 @@ def test_real_get_post_finish_against_mock_fhir():
             env_a = MedAgentBenchEnv(ACTION, base, max_rounds=8)
             await env_a.reset()
             obs, _, _, _ = await env_a.step(
-                'POST Observation\n{"resourceType":"Observation","subject":{"reference":"Patient/S2380121"},"valueString":"118/77 mmHg"}')
+                'POST Observation\n{"resourceType":"Observation","code":{"text":"BP"},'
+                '"subject":{"reference":"Patient/S2380121"},"valueString":"118/77 mmHg",'
+                '"effectiveDateTime":"2023-11-13T10:15:00+00:00","status":"final"}')
             assert "successfully" in obs
             assert env_a.posts[0]["status"] == 201
             _, ra, _, ia = await env_a.step("FINISH([])")

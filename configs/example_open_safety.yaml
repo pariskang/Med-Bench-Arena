@@ -10,22 +10,41 @@ run:
 
 eval:
   gen: {temperature: 0.0, max_tokens: 1024}
-  judge_model: mock-judge        # real: deepseek-r1 / gpt-4o judge
+  judge_model: mock-judge        # HealthBench-faithful judge is GPT-4.1 (see below)
 
 models:
   - {id: mock-model, type: mock, behavior: auto}
   - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+  # HealthBench's official grader is GPT-4.1 — match it for comparable numbers:
+  # - {id: gpt-4.1, type: litellm, model: openai/gpt-4.1, api_key_env: OPENAI_API_KEY, judge_only: true}
   # - {id: deepseek-r1, type: litellm, model: deepseek/deepseek-reasoner,
   #    api_key_env: DEEPSEEK_API_KEY, judge_only: true}
 
 datasets:
-  - id: healthbench           # rubric items carry signed points; prompt is chat
+  # HealthBench (OpenAI, May 2025). Graded the FAITHFUL way: per_criterion: true ->
+  # one judge call per rubric item, boolean criteria_met, score = Σ(signed met
+  # points)/Σ(positive points), clipped at the example level — byte-for-byte the
+  # openai/simple-evals algorithm. Numbers still track the judge, so use GPT-4.1.
+  - id: healthbench           # oss split: 5,000 conversations / open rubric items
     adapter: local_json
     task: open_qa
     source_url: https://openaipublic.blob.core.windows.net/simple-evals/healthbench/2025-05-07-06-14-12_oss_eval.jsonl
     field_map: {prompt: prompt, rubric: rubrics, reference: ideal_completions_data}
-    metrics: [llm_judge]
-    # variants: hard_2025-05-08-21-00-10.jsonl (1000) · consensus_2025-05-09-20-00-46.jsonl (3671)
+    metrics:
+      - {name: llm_judge, per_criterion: true}
+  # The other two official variants — same schema, just swap source_url:
+  # - id: healthbench_hard       # 1,000 hardest conversations
+  #   adapter: local_json
+  #   task: open_qa
+  #   source_url: https://openaipublic.blob.core.windows.net/simple-evals/healthbench/hard_2025-05-08-21-00-10.jsonl
+  #   field_map: {prompt: prompt, rubric: rubrics, reference: ideal_completions_data}
+  #   metrics: [{name: llm_judge, per_criterion: true}]
+  # - id: healthbench_consensus  # 3,671 physician-consensus conversations
+  #   adapter: local_json
+  #   task: open_qa
+  #   source_url: https://openaipublic.blob.core.windows.net/simple-evals/healthbench/consensus_2025-05-09-20-00-46.jsonl
+  #   field_map: {prompt: prompt, rubric: rubrics, reference: ideal_completions_data}
+  #   metrics: [{name: llm_judge, per_criterion: true}]
 
   - id: llmeval_med           # Chinese; checklist (核心/次要需求) as the rubric
     adapter: local_json
@@ -34,10 +53,28 @@ datasets:
     field_map: {prompt: problem, rubric: checklist, reference: sanswer}
     metrics: [llm_judge]
 
-  - id: medsafetybench        # CSV; judge scores refusal/harm vs safe_response
+  - id: medsafetybench        # full test set: 9 AMA-principle categories × {gpt4, llama2}
     adapter: local_json
-    task: safety               # -> default 安全 rubric
-    source_url: https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_1.csv
+    task: safety               # -> default 安全 rubric; judge scores refusal/harm vs safe_response
+    source_url:
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_1.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_2.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_3.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_4.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_5.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_6.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_7.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_8.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_9.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_1.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_2.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_3.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_4.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_5.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_6.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_7.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_8.csv
+      - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/llama2/med_safety_demonstrations_category_9.csv
     field_map: {prompt: harmful_medical_request, reference: safe_response}
     metrics: [llm_judge]
-    # categories 1-9 under datasets/test/gpt4/med_safety_demonstrations_category_{N}.csv
+    # 9 categories = AMA Principles of Medical Ethics; ~981 test items (gpt4 50/ea + llama2 59/ea)

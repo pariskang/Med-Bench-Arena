@@ -1,0 +1,62 @@
+# Catalog: Chinese-medical NLU + TCM extensions (beyond example_tcm.yaml).
+# Verified live (2026-06). Default offline mock model + mock judge.
+#
+#   python -m medeval run configs/catalog_cn_tcm.yaml --limit 5
+run:
+  output_dir: ./results/cn_tcm
+  concurrency: 12
+  cache: true
+eval:
+  gen: {temperature: 0.0, max_tokens: 1024}
+  judge_model: mock-judge
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+  # - {id: deepseek, type: litellm, model: deepseek/deepseek-chat, api_key_env: DEEPSEEK_API_KEY}
+
+datasets:
+  # ---- CBLUE reformatted as prompt->generation (route metrics by task family) ----
+  - id: promptcblue              # tchenglv mirror keeps the original schema (dev split)
+    adapter: local_json
+    task: open_qa
+    format: jsonl                # dev.json is actually JSONL
+    source_url: https://huggingface.co/datasets/tchenglv/PromptCBLUE/resolve/main/dev.json
+    field_map: {prompt: input, reference: target, task_dataset: task_dataset}
+    metrics: [f1, rouge]         # f1≈IE/cls · rouge≈MedDG/IMCS-MRG; task_dataset rides along for filtering
+    # original michael-wzhu/PromptCBLUE HF id is dead (401); CBLUE raw is submission-only.
+
+  # ---- prescription audit 处方审核 (strict set-exact-match) ----
+  - id: tcmeval_pa               # Figshare xlsx -> convert to json once (hf_mcq can't read .xlsx)
+    adapter: hf_mcq
+    format: json
+    data_files: ./data/tcmeval_pa.json     # from https://ndownloader.figshare.com/files/56581880 (see DATASETS.md)
+    options_inline: true                   # "A. ..\nB. .." packed in the Candidate Answers cell
+    field_map: {question: Question, options: Candidate Answers, answer: Answer}
+    answer_format: multi
+    metrics: [mcq_accuracy]
+
+  # ---- TCM-BEST4SDT: 300 MCQ (knowledge/ethics/safety) + 300 open 辨证论治 ----
+  - id: tcm_best4sdt_mcq
+    adapter: hf_mcq
+    format: json
+    data_files:
+      - https://raw.githubusercontent.com/DYJG-research/TCM-BEST4SDT/main/Basic_Knowledge.json
+      - https://raw.githubusercontent.com/DYJG-research/TCM-BEST4SDT/main/Medical_Ethics.json
+      - https://raw.githubusercontent.com/DYJG-research/TCM-BEST4SDT/main/LLM_Content_Safety.json
+    field_map: {question: question, options: option, answer: answer}
+    answer_format: multi
+    metrics: [mcq_accuracy]
+
+  - id: tcm_best4sdt_sdt
+    adapter: local_json
+    task: sdt
+    format: json
+    source_url: https://raw.githubusercontent.com/DYJG-research/TCM-BEST4SDT/main/TCM_SDT.json
+    field_map: {prompt: instruction, reference: output, label: 中医疾病诊断}
+    metrics: [llm_judge, syndrome_chain]
+
+  # ---- TCM-Text-Exams (ShizhenGPT) — flatten the dict-of-sections first ----
+  # The HF file is a dict keyed by 5 exam sections; load_dataset("json") errors on it.
+  # Flatten to an array (see DATASETS.md one-liner) then:
+  # - {id: tcm_text_exams, adapter: hf_mcq, format: json, data_files: ./data/tcm_text_flat.json,
+  #    field_map: {question: question, options: options, answer: answer_idx}, answer_format: multi}

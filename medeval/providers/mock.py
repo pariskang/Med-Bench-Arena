@@ -15,7 +15,9 @@ from typing import Any
 from ..schema import Generation, Message
 from .base import ModelProvider, register_provider
 
-_LETTER_LINE = re.compile(r"^\s*([A-Z])\s*[.):：、]\s*", re.MULTILINE)
+# Recognize option labels in both ASCII and full-width CJK punctuation
+# ("A." / "A)" / "A：" / "A．" / "A、") so Chinese MCQ (CMB/TCMBench/CMExam) parse too.
+_LETTER_LINE = re.compile(r"^\s*([A-Z])\s*[.):：、．]\s*", re.MULTILINE)
 _RUBRIC_ID = re.compile(r"\(id=([^,)]+)")
 
 
@@ -72,6 +74,11 @@ class MockProvider(ModelProvider):
         if "diagnosis" in low and "doctor" in low:
             return self._agent(prompt)
         letters = sorted(set(_LETTER_LINE.findall(prompt)))
+        # MediQ interactive: ask one question, then commit to a lettered answer
+        if "answer: <letter>" in low and letters:
+            if low.count("please tell me") < 1:   # count our own prior questions in the history
+                return "Please tell me the main symptoms, history, and any key findings."
+            return f"ANSWER: {letters[_hash_int(prompt) % len(letters)]}"
         if letters and ("correct option" in low or "letter" in low or "answer with" in low):
             pick = letters[_hash_int(prompt) % len(letters)]
             return f"The answer is {pick}."
@@ -82,6 +89,8 @@ class MockProvider(ModelProvider):
         )
 
     def _judge(self, prompt: str) -> str:
+        if "criteria_met" in prompt:   # HealthBench-style per-criterion grader
+            return json.dumps({"explanation": "mock judge", "criteria_met": True})
         # Award every listed criterion (id=...) — exercises the per-criterion path.
         ids = _RUBRIC_ID.findall(prompt)
         scores = {cid: 1.0 for cid in ids}

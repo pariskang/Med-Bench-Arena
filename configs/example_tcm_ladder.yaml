@@ -30,20 +30,21 @@ datasets:
     answer_format: multi          # "C" and "ABCDE" both handled; blank trailing E dropped
     metrics: [mcq_accuracy]
 
-  # --- multimodal: tongue/herb image classification (舌象/中药) ---
-  # visual.parquet rows are (image-bytes, answer-letter, category). The original
-  # 4-image MCQ ("which image shows Huangqi?") is assembled at eval time and its
-  # distractors are NOT in the parquet, so we score the released signal directly:
-  # recognise the image modality (herb 中药 vs tongue 舌象) from the gold category.
-  # This exercises the full raw-bytes -> data-URL -> vision-model -> score path.
+  # --- multimodal: the FAITHFUL 4-option visual MCQ (舌象/中药) ---
+  # Each visual.parquet image is a PRE-RENDERED 4-choice question — the question
+  # text, the candidate options and the A/B/C/D labels are all baked into the image
+  # (herb = a 2x2 grid of 4 photos "which is X?"; tongue = 1 photo + 4 text options
+  # "which constitution?"). So the model just reads the image and outputs the letter;
+  # no question/options are injected. (category herb/tongue + lang are report slices.)
   - id: tcm_ladder_visual
     adapter: hf_mcq
     format: parquet
     data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/main/visual.parquet
     split: train
-    question_text: "这张图片是中药饮片(herb)还是舌象(tongue)？/ Is this image a herb or a tongue?"
-    field_map: {options: null, answer: category, image: image}
-    inject_options: [herb, tongue]
-    answer_format: text
+    question_text: "The image is a multiple-choice question with options labeled A, B, C, D. Answer with ONLY the letter of the correct option. 图中为四选一选择题，请只回答正确选项的字母。"
+    prompt_template: "{question}"   # options are in the image -> don't render a text block
+    inject_options: ["A", "B", "C", "D"]
+    field_map: {answer: answer, image: image}
+    answer_format: letter           # gold 'answer' is the letter A/B/C/D
     metrics: [mcq_accuracy]
     # NOTE: visual.parquet is ~730 MB (images embedded). Use --limit, or stream.

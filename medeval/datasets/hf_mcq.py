@@ -13,6 +13,7 @@ It normalizes the three option layouts seen in the wild...
 """
 from __future__ import annotations
 
+import json
 import re
 import string
 from typing import Any
@@ -53,11 +54,19 @@ class HFMCQAdapter(DatasetAdapter):
         # dataset's (possibly broken / removed) loading script. e.g. CMB on
         # datasets>=5 errors via the script but loads fine as raw json data_files.
         self.data_files = config.get("data_files")
+        # merge gold from a separate file by a key column (e.g. CMB test answers
+        # live on GitHub keyed by id, joined to the HF question file):
+        #   answer_join: {data_files: <url>, key: id, value: answer}
+        self.answer_join = config.get("answer_join")
+        self._answer_map: dict[str, Any] | None = None
         self.format = config.get("format", "json")
         self.fm = dict(config.get("field_map", {}))
         self.answer_format = config.get("answer_format", "letter")
         self.inject_options = config.get("inject_options")
         self.options_inline = bool(config.get("options_inline", False))
+        # deterministically shuffle option order per sample (removes position bias,
+        # e.g. MedHallu's fixed correct-first 2-option layout)
+        self.shuffle_options = bool(config.get("shuffle_options", False))
         self.system_prompt = config.get("system_prompt")
         self.prompt_template = config.get("prompt_template")
         self.instruction = config.get(
@@ -69,16 +78,25 @@ class HFMCQAdapter(DatasetAdapter):
         # multimodal: field_map.image may name a column (or list) of images;
         # image_base is prepended to relative paths/URLs.
         self.image_base = config.get("image_base", "")
+        # auto-download + unzip an images.zip and use its dir as image_base
+        self.image_zip = config.get("image_zip")
+        self.image_strip = config.get("image_strip", "")   # drop a path prefix (e.g. "../")
         # constant question when the data has no question column (e.g. an
         # image-classification set: TCM-Ladder visual = image + category label)
         self.question_text = config.get("question_text", "")
-        if not self.metrics:
+        if not self.metric_specs:
+            self.metric_specs = [("mcq_accuracy", {})]
             self.metrics = ["mcq_accuracy"]
 
     # --- loading ----------------------------------------------------------
     def load(self) -> list[Sample]:
         from datasets import load_dataset  # lazy
 
+        if self.image_zip:  # fetch + unzip the images archive once
+            from ..assets import ensure_image_base
+            self.image_base = ensure_image_base(self.image_zip, self.image_base or None)
+        if self.answer_join:
+            self._answer_map = self._load_answer_map()
         samples: list[Sample] = []
         if self.data_files:  # raw-file mode (json/csv/parquet): single -> "train"
             ds = load_dataset(self.format, data_files=self.data_files,
@@ -98,9 +116,33 @@ class HFMCQAdapter(DatasetAdapter):
                 return samples
         return samples
 
+    def _load_answer_map(self) -> dict[str, Any]:
+        import hashlib
+        import urllib.request
+        from .local_json import CACHE_DIR
+        spec = self.answer_join
+        url = spec["data_files"]
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        h = hashlib.sha256(url.encode()).hexdigest()[:16]
+        dest = CACHE_DIR / f"{self.id}_answers_{h}.json"
+        if not dest.exists():
+            req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
+            with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
+                f.write(r.read())
+        data = json.loads(dest.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            data = data.get("data", list(data.values()))
+        key, val = spec.get("key", "id"), spec.get("value", "answer")
+        return {str(rec[key]): rec[val] for rec in data if key in rec and val in rec}
+
     def _ingest(self, ds, cfg, samples: list[Sample]) -> bool:
         """Append samples from one loaded split; return True if the limit was hit."""
         for i, row in enumerate(ds):
+            if self._answer_map is not None:  # inject joined gold by key
+                row = dict(row)
+                rid = str(row.get(self.answer_join.get("key", "id")))
+                if rid in self._answer_map:
+                    row[self.fm["answer"]] = self._answer_map[rid]
             s = self._row_to_sample(row, cfg, i)
             if s is not None:
                 samples.append(s)
@@ -119,9 +161,15 @@ class HFMCQAdapter(DatasetAdapter):
         opt = self.fm.get("options")
         if opt is None and self.inject_options:
             return list(self.inject_options), []
-        if isinstance(opt, list):  # N separate columns
-            vals = ["" if row.get(c) is None else str(row[c]) for c in opt]
-            while len(vals) > 2 and not vals[-1].strip():  # drop trailing empty slots (e.g. blank E)
+        if isinstance(opt, list):  # N columns; list-valued cols are flattened
+            vals: list[str] = []                 # (e.g. MedBookVQA [Answer, Distractors])
+            for c in opt:
+                v = row.get(c)
+                if isinstance(v, (list, tuple)):
+                    vals.extend("" if x is None else str(x) for x in v)
+                else:
+                    vals.append("" if v is None else str(v))
+            while len(vals) > 2 and not vals[-1].strip():  # drop trailing empty slots (blank E)
                 vals.pop()
             return vals, []
         val = row[opt]
@@ -136,8 +184,25 @@ class HFMCQAdapter(DatasetAdapter):
                 ks = [str(d.get("key", "")) for d in val]
                 return choices, ([k.upper() for k in ks] if all(len(k) == 1 for k in ks) else [])
             return [str(x) for x in val], []
+        # single string that is a stringified dict/list (e.g. Med-HALT
+        # "{'0': '...', '1': '...'}") -> parse and re-resolve
+        sval = str(val).strip()
+        if sval[:1] in ("{", "[") and sval[-1:] in ("}", "]"):
+            import ast
+            try:
+                parsed = ast.literal_eval(sval)
+            except (ValueError, SyntaxError):
+                parsed = None
+            if isinstance(parsed, dict):
+                parsed = {k: v for k, v in parsed.items()
+                          if str(k).strip().lower() != "correct answer"}
+                keys = list(parsed.keys())
+                letterkeys = keys if all(len(str(k)) == 1 and str(k).upper() in LETTERS
+                                         for k in keys) else []
+                return [str(parsed[k]) for k in keys], letterkeys
+            if isinstance(parsed, (list, tuple)):
+                return [str(x) for x in parsed], []
         # single string: try inline lettered options (CMExam), else wrap
-        sval = str(val)
         if self.options_inline or self._looks_inline(sval):
             parsed = self._split_inline(sval)
             if len(parsed) >= 2:
@@ -213,6 +278,8 @@ class HFMCQAdapter(DatasetAdapter):
             cval = row[ctx_field]
             if isinstance(cval, dict) and "contexts" in cval:
                 context = "\n".join(str(x) for x in cval["contexts"])
+            elif isinstance(cval, (list, tuple)):  # e.g. MedHallu Knowledge: list[str]
+                context = "\n".join(str(x) for x in cval)
             else:
                 context = str(cval)
 
@@ -228,18 +295,38 @@ class HFMCQAdapter(DatasetAdapter):
                 return None
             reference = {"index": gi, "letter": LETTERS[gi], "text": choices[gi]}
 
+        sid = f"{self.id}:{cfg or 'default'}:{row.get('id', i)}"
+        if self.shuffle_options:  # de-bias fixed option order (e.g. MedHallu correct-first)
+            choices, reference = self._shuffle(sid, choices, reference)
+
         user = self._render(question, choices, context)
         msgs = []
         if self.system_prompt:
             msgs.append(Message("system", self.system_prompt))
         images = self._resolve_images(row)
         msgs.append(Message("user", user, images=images or None))
-        sid = f"{self.id}:{cfg or 'default'}:{row.get('id', i)}"
         return Sample(
             id=sid, task_type=TaskType.MCQ, messages=msgs,
             choices=choices, reference=reference,
             meta={"path": self.path, "config": cfg, "subject": row.get("subject")},
         )
+
+    @staticmethod
+    def _shuffle(sid: str, choices: list[str], reference: dict[str, Any]
+                 ) -> tuple[list[str], dict[str, Any]]:
+        import hashlib
+        import random
+        seed = int(hashlib.md5(sid.encode("utf-8")).hexdigest()[:8], 16)  # stable across runs
+        perm = list(range(len(choices)))
+        random.Random(seed).shuffle(perm)
+        new_choices = [choices[i] for i in perm]
+        pos = {old: new for new, old in enumerate(perm)}  # old index -> new index
+        if "indices" in reference:
+            ref = {"indices": sorted(pos[i] for i in reference["indices"])}
+        else:
+            ni = pos[reference["index"]]
+            ref = {"index": ni, "letter": LETTERS[ni], "text": new_choices[ni]}
+        return new_choices, ref
 
     # --- multimodal -------------------------------------------------------
     def _resolve_images(self, row: dict[str, Any]) -> list[str]:
@@ -254,41 +341,8 @@ class HFMCQAdapter(DatasetAdapter):
         return out
 
     def _encode_image(self, val: Any) -> list[str]:
-        if isinstance(val, (bytes, bytearray)):  # raw image bytes (e.g. TCM-Ladder parquet)
-            import base64
-            mime = "image/png" if bytes(val[:8]).startswith(b"\x89PNG") else "image/jpeg"
-            return [f"data:{mime};base64,{base64.b64encode(bytes(val)).decode('ascii')}"]
-        if isinstance(val, str):
-            if val.startswith(("http://", "https://", "data:")):
-                return [val]
-            return [self.image_base + val]
-        if isinstance(val, dict):  # HF Image feature: {bytes, path} or {url}
-            if val.get("url"):
-                return [val["url"]]
-            if val.get("path"):
-                p = val["path"]
-                pre = self.image_base if not p.startswith(("http", "data:")) else ""
-                return [pre + p]
-            if val.get("bytes"):
-                import base64
-                return [f"data:image/png;base64,{base64.b64encode(val['bytes']).decode('ascii')}"]
-            return []
-        if isinstance(val, (list, tuple)):
-            out: list[str] = []
-            for v in val:
-                out.extend(self._encode_image(v))
-            return out
-        try:  # PIL.Image
-            import base64
-            import io
-            from PIL import Image as _PIL
-            if isinstance(val, _PIL.Image):
-                buf = io.BytesIO()
-                val.convert("RGB").save(buf, format="PNG")
-                return [f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"]
-        except Exception:
-            pass
-        return []
+        from ..schema import encode_images
+        return encode_images(val, self.image_base, self.image_strip)
 
     def _render(self, question: str, choices: list[str], context: str) -> str:
         opt_block = "\n".join(f"{LETTERS[i]}. {c}" for i, c in enumerate(choices))
