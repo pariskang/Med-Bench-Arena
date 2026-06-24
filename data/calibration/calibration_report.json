@@ -1,0 +1,295 @@
+{
+  "rater": "strong-model judge (blind)",
+  "n_items": 120,
+  "n_items_total": 120,
+  "rater_vs_physician": {
+    "n_items_pairs": 250,
+    "raw_agreement": 0.736,
+    "cohen_kappa": 0.39378352560805346,
+    "f1_pos": 0.8058823529411765,
+    "f1_neg": 0.5875,
+    "f1_balanced": 0.6966911764705883,
+    "table": {
+      "tt": 137,
+      "tf": 36,
+      "ft": 30,
+      "ff": 47,
+      "n": 250
+    },
+    "f1_balanced_ci95": [
+      0.6141227933135447,
+      0.7674376185612141
+    ],
+    "cohen_kappa_ci95": [
+      0.22920892494929027,
+      0.5358592692828147
+    ]
+  },
+  "physician_ceiling": {
+    "n_items_pairs": 282,
+    "raw_agreement": 0.7446808510638298,
+    "cohen_kappa": 0.43700088731144626,
+    "f1_pos": 0.8043478260869565,
+    "f1_neg": 0.6326530612244898,
+    "f1_balanced": 0.7185004436557232,
+    "table": {
+      "tt": 148,
+      "tf": 36,
+      "ft": 36,
+      "ff": 62,
+      "n": 282
+    },
+    "f1_balanced_ci95": [
+      0.626945412311266,
+      0.7992021276595744
+    ]
+  },
+  "verdict": {
+    "calibrated": false,
+    "physician_equivalent": true,
+    "substantial_absolute": false,
+    "delta_f1_vs_ceiling": -0.021809267185134873,
+    "delta_kappa_vs_ceiling": -0.0432173617033928,
+    "thresholds": {
+      "ceiling_margin": 0.05,
+      "kappa_floor": 0.4,
+      "min_items": 100
+    },
+    "reasons": [
+      "judge matches the human ceiling (ΔF1=-0.022, Δκ=-0.043) but absolute agreement is only moderate (κ=0.394 < 0.40): rubric grading is intrinsically subjective, so open-ended scores stay AUXILIARY"
+    ]
+  },
+  "per_category": [
+    {
+      "category": "cluster:communication_health-professional_accuracy_completeness",
+      "n_items": 6,
+      "raw_agreement": 0.5833333333333334,
+      "cohen_kappa": 0.16666666666666674,
+      "f1_balanced": 0.5555555555555556
+    },
+    {
+      "category": "cluster:communication_health-professional_tailored",
+      "n_items": 3,
+      "raw_agreement": 0.5,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.6666666666666666
+    },
+    {
+      "category": "cluster:communication_not-health-professional_accuracy_completeness",
+      "n_items": 6,
+      "raw_agreement": 0.9166666666666666,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.9565217391304348
+    },
+    {
+      "category": "cluster:communication_not-health-professional_tailored",
+      "n_items": 6,
+      "raw_agreement": 0.6666666666666666,
+      "cohen_kappa": 0.14285714285714265,
+      "f1_balanced": 0.5555555555555555
+    },
+    {
+      "category": "cluster:complex_responses_detailed_accuracy_hedging",
+      "n_items": 1,
+      "raw_agreement": 0.0,
+      "cohen_kappa": 0.0,
+      "f1_balanced": NaN
+    },
+    {
+      "category": "cluster:complex_responses_detailed_appropriate",
+      "n_items": 3,
+      "raw_agreement": 0.3333333333333333,
+      "cohen_kappa": -0.5000000000000001,
+      "f1_balanced": 0.25
+    },
+    {
+      "category": "cluster:complex_responses_simple_accuracy_hedging",
+      "n_items": 2,
+      "raw_agreement": 0.25,
+      "cohen_kappa": -0.5,
+      "f1_balanced": 0.2
+    },
+    {
+      "category": "cluster:complex_responses_simple_appropriate",
+      "n_items": 2,
+      "raw_agreement": 0.75,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.8571428571428571
+    },
+    {
+      "category": "cluster:context_seeking_enough-context_helpful_safe",
+      "n_items": 4,
+      "raw_agreement": 0.8888888888888888,
+      "cohen_kappa": 0.7692307692307692,
+      "f1_balanced": 0.8831168831168831
+    },
+    {
+      "category": "cluster:context_seeking_enough-context_precise",
+      "n_items": 4,
+      "raw_agreement": 0.7777777777777778,
+      "cohen_kappa": 0.35714285714285715,
+      "f1_balanced": 0.6785714285714286
+    },
+    {
+      "category": "cluster:context_seeking_not-enough-context_context_seeking",
+      "n_items": 4,
+      "raw_agreement": 0.9,
+      "cohen_kappa": 0.7368421052631581,
+      "f1_balanced": 0.8666666666666667
+    },
+    {
+      "category": "cluster:context_seeking_not-enough-context_helpful_safe",
+      "n_items": 4,
+      "raw_agreement": 0.6,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.7499999999999999
+    },
+    {
+      "category": "cluster:emergency_referrals_conditionally-emergent_context_seeking",
+      "n_items": 1,
+      "raw_agreement": 1.0,
+      "cohen_kappa": 1.0,
+      "f1_balanced": 1.0
+    },
+    {
+      "category": "cluster:emergency_referrals_conditionally-emergent_emergency_behavior",
+      "n_items": 4,
+      "raw_agreement": 0.5,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.4666666666666667
+    },
+    {
+      "category": "cluster:emergency_referrals_emergent_context_seeking",
+      "n_items": 5,
+      "raw_agreement": 0.9,
+      "cohen_kappa": 0.7368421052631581,
+      "f1_balanced": 0.8666666666666667
+    },
+    {
+      "category": "cluster:emergency_referrals_emergent_emergency_behavior",
+      "n_items": 1,
+      "raw_agreement": 0.0,
+      "cohen_kappa": 0.0,
+      "f1_balanced": NaN
+    },
+    {
+      "category": "cluster:emergency_referrals_non-emergent_context_seeking",
+      "n_items": 2,
+      "raw_agreement": 0.75,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.8571428571428571
+    },
+    {
+      "category": "cluster:emergency_referrals_non-emergent_emergency_behavior",
+      "n_items": 1,
+      "raw_agreement": 1.0,
+      "cohen_kappa": 1.0,
+      "f1_balanced": 1.0
+    },
+    {
+      "category": "cluster:global_health_context-does-not-matter_aligned_accurate",
+      "n_items": 6,
+      "raw_agreement": 1.0,
+      "cohen_kappa": 1.0,
+      "f1_balanced": 1.0
+    },
+    {
+      "category": "cluster:global_health_context-matters-but-unclear_aligned_accurate",
+      "n_items": 3,
+      "raw_agreement": 0.3333333333333333,
+      "cohen_kappa": -0.5000000000000001,
+      "f1_balanced": 0.25
+    },
+    {
+      "category": "cluster:global_health_context-matters-is-clear_aligned_accurate",
+      "n_items": 6,
+      "raw_agreement": 0.8333333333333334,
+      "cohen_kappa": 0.6250000000000001,
+      "f1_balanced": 0.8125
+    },
+    {
+      "category": "cluster:health_data_tasks_enough-info-to-complete-task_accuracy_safety",
+      "n_items": 6,
+      "raw_agreement": 0.9166666666666666,
+      "cohen_kappa": 0.7499999999999999,
+      "f1_balanced": 0.8736842105263158
+    },
+    {
+      "category": "cluster:health_data_tasks_enough-info-to-complete-task_response_instruction_following",
+      "n_items": 6,
+      "raw_agreement": 0.5833333333333334,
+      "cohen_kappa": 0.06250000000000003,
+      "f1_balanced": 0.4957983193277311
+    },
+    {
+      "category": "cluster:health_data_tasks_not-enough-info-to-complete-task_helpfulness",
+      "n_items": 4,
+      "raw_agreement": 0.875,
+      "cohen_kappa": 0.7142857142857143,
+      "f1_balanced": 0.8545454545454545
+    },
+    {
+      "category": "cluster:health_data_tasks_not-enough-info-to-complete-task_safety",
+      "n_items": 5,
+      "raw_agreement": 0.9,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.9473684210526316
+    },
+    {
+      "category": "cluster:hedging_any-reducible-uncertainty_accurate",
+      "n_items": 3,
+      "raw_agreement": 1.0,
+      "cohen_kappa": 1.0,
+      "f1_balanced": 1.0
+    },
+    {
+      "category": "cluster:hedging_any-reducible-uncertainty_hedges",
+      "n_items": 4,
+      "raw_agreement": 0.6,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.7499999999999999
+    },
+    {
+      "category": "cluster:hedging_any-reducible-uncertainty_seeks_context",
+      "n_items": 5,
+      "raw_agreement": 0.6363636363636364,
+      "cohen_kappa": 0.12000000000000012,
+      "f1_balanced": 0.5416666666666666
+    },
+    {
+      "category": "cluster:hedging_no-uncertainty_accurate",
+      "n_items": 3,
+      "raw_agreement": 1.0,
+      "cohen_kappa": 1.0,
+      "f1_balanced": 1.0
+    },
+    {
+      "category": "cluster:hedging_no-uncertainty_hedges",
+      "n_items": 2,
+      "raw_agreement": 0.5,
+      "cohen_kappa": 0.0,
+      "f1_balanced": 0.6666666666666666
+    },
+    {
+      "category": "cluster:hedging_no-uncertainty_seeks_context",
+      "n_items": 2,
+      "raw_agreement": 1.0,
+      "cohen_kappa": 1.0,
+      "f1_balanced": 1.0
+    },
+    {
+      "category": "cluster:hedging_only-irreducible-uncertainty_hedges",
+      "n_items": 5,
+      "raw_agreement": 0.9090909090909091,
+      "cohen_kappa": 0.8196721311475409,
+      "f1_balanced": 0.9090909090909091
+    },
+    {
+      "category": "cluster:hedging_only-irreducible-uncertainty_seeks_context",
+      "n_items": 1,
+      "raw_agreement": 0.0,
+      "cohen_kappa": 0.0,
+      "f1_balanced": NaN
+    }
+  ]
+}

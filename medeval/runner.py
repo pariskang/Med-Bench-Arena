@@ -66,6 +66,39 @@ _INTERNAL_NOTE = (
     "`split_type`. Reported for internal tracking only; do **not** publish them "
     "as official scores.")
 
+_AUXILIARY_NOTE = (
+    "> ⚠️ **Auxiliary metric — open-ended, LLM-judge scored.** These scores come "
+    "from an LLM-as-judge whose agreement with human experts has not (yet) cleared "
+    "calibration, so they are reported as a secondary signal and never as a headline "
+    "rank. Calibrate a judge with `medeval calibrate` (see `data/calibration/`); a "
+    "judge becomes headline-eligible only when it matches the physician ceiling **and** "
+    "reaches substantial absolute agreement (κ ≥ 0.40). On HealthBench's physician "
+    "meta-eval a strong-model judge is *physician-equivalent* yet only *moderate* in "
+    "absolute terms (κ≈0.39 vs a 0.44 human ceiling) — rubric grading is intrinsically "
+    "subjective — so open-ended scores stay auxiliary by default.")
+
+
+def _judge_calibrated(output_dir: Path) -> bool:
+    """True iff a calibration report marking the judge headline-eligible is present.
+
+    Looks in the run's own dir then the canonical ``data/calibration/``. Absent or
+    failing report → open-ended judge scores are treated as auxiliary (the safe default).
+    """
+    for cand in (output_dir / "calibration_report.json",
+                 Path("data/calibration/calibration_report.json")):
+        try:
+            data = json.loads(cand.read_text(encoding="utf-8"))
+            if data.get("verdict", {}).get("calibrated") is True:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _is_judge_headline(row: dict[str, Any]) -> bool:
+    """Whether this row is ranked by an LLM-judge open-ended score."""
+    return headline(row["metrics"])[0] == "judge_score"
+
 
 def _leaderboard_section(subset: list[dict[str, Any]]) -> list[str]:
     """Per-dataset ranked tables for one comparability tier."""
@@ -94,8 +127,12 @@ def write_leaderboard(rows: list[dict[str, Any]], output_dir: Path) -> None:
     (output_dir / "leaderboard.json").write_text(
         json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    official = [r for r in rows if r.get("split_type", "official") == "official"]
-    internal = [r for r in rows if r.get("split_type", "official") != "official"]
+    # Open-ended (LLM-judge) scores are auxiliary until the judge clears calibration.
+    judge_ok = _judge_calibrated(output_dir)
+    auxiliary = [r for r in rows if _is_judge_headline(r) and not judge_ok]
+    ranked = [r for r in rows if r not in auxiliary]
+    official = [r for r in ranked if r.get("split_type", "official") == "official"]
+    internal = [r for r in ranked if r.get("split_type", "official") != "official"]
     lines = ["# MedEval Leaderboard", ""]
     if official:
         lines += ["## ✅ Official (comparable)", ""]
@@ -103,6 +140,10 @@ def write_leaderboard(rows: list[dict[str, Any]], output_dir: Path) -> None:
     if internal:
         lines += ["## ⚠️ Internal / non-comparable", "", _INTERNAL_NOTE, ""]
         lines += _leaderboard_section(internal)
+    if auxiliary:
+        lines += ["## 🧪 Auxiliary (open-ended · LLM-judge, uncalibrated)", "",
+                  _AUXILIARY_NOTE, ""]
+        lines += _leaderboard_section(auxiliary)
     (output_dir / "leaderboard.md").write_text("\n".join(lines), encoding="utf-8")
 
 

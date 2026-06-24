@@ -209,6 +209,21 @@ messages), an optional `rubric` (normalized from many shapes), `reference`, and 
  metrics: [{name: llm_judge, per_criterion: true}]}   # judge: gpt-4.1
 ```
 
+### HealthBench meta-eval ✅ (judge calibration — physician labels)
+- **Source:** `…/healthbench/2025-05-07-06-14-12_oss_meta_eval.jsonl` (29,511 rows). Each row is
+  one *(prompt, completion, rubric)* judged by **2+ physicians** (`binary_labels` +
+  `anonymized_physician_ids`). This is the only one of the open-ended sets that ships **human
+  gold**, so it anchors judge calibration. `medeval calibrate --rebuild-from <url>` draws a
+  frozen, deterministic, class-balanced, cluster-stratified **120-item** sample into
+  `data/calibration/` (a *blind* reviewer file + a held-out physician-label file).
+- **Agreement metric:** OpenAI simple-evals' **balanced pairwise F1** (met/unmet), replicated
+  verbatim, plus **Cohen's κ** + raw agreement with bootstrap 95% CIs, against the
+  **physician-vs-physician ceiling**. A judge is *headline-eligible* only when it matches the
+  human ceiling (ΔF1, Δκ ≤ 0.05) **and** reaches κ ≥ 0.40; otherwise its open-ended scores are
+  **auxiliary**. See `data/calibration/calibration_report.md` and the README's *Judge
+  calibration* section. Frozen result: a strong-model judge is physician-equivalent
+  (F1 0.697 vs 0.719 ceiling) but only moderate absolutely (κ 0.394) → **auxiliary**.
+
 ### LLMEval-Med ✅
 - **Source:** `llmeval/LLMEval-Med` `dataset/dataset.json`. **Caveat:** it's a **dict keyed
   by category**, not a flat array (the adapter flattens). `problem` = prompt, `checklist`

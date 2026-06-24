@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-10%2F10%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-12%2F12%20passing-brightgreen.svg)](tests/)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-30%2B%20live--verified-8A2BE2.svg)](DATASETS.md)
 [![TCM](https://img.shields.io/badge/中医-first--class-c1272d.svg)](#-traditional-chinese-medicine-中医)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
@@ -38,6 +38,7 @@ python -m medeval run configs/example_smoke.yaml
 - 🤖 **Real agent loops** — AgentClinic (OSCE + NEJM), **MedAgentBench** against a live **FHIR** EHR server, and **MediQ** proactive questioning — scored with `pass^k`.
 - 🔌 **Any backend** — local **HF/vLLM** (batched), **Poe**, and **LiteLLM** (100+ providers + the recommended judge). All swappable by one line of YAML.
 - ⚖️ **Faithful grading** — HealthBench per-criterion rubric, MedAgentBench per-task FHIR-payload validation (+ official gated `refsol.py`), signed-point safety rubrics.
+- 🔬 **Calibrated judge** — open-ended LLM-judge scores are validated against **physician** labels (HealthBench meta-eval, balanced-F1 + κ vs the human ceiling) and demoted to an **auxiliary** tier until they clear calibration. `medeval calibrate`.
 - ⚡ **Scales out** — embarrassingly-parallel strided sharding across **local / Ray / Slurm**; resumable, no central server.
 - 📤 **Submission-ready** — export predictions to **OpenCompass** / **MedBench** upload formats.
 
@@ -212,6 +213,45 @@ A representative slice (all wired & verified against live sources; **30+** docum
 </details>
 
 Multiple metrics per dataset are supported — e.g. TCMEval-SDT runs `[llm_judge, syndrome_chain, bleu, rouge]`.
+
+### ⚖️ Judge calibration — open-ended scores must earn the headline
+
+An LLM-judge score is only trustworthy if the judge agrees with **human experts**.
+`medeval calibrate` measures that agreement on a frozen, **physician-labeled** set and
+decides whether open-ended scores may headline the leaderboard or must be reported as an
+**auxiliary** metric.
+
+The anchor is **HealthBench's official meta-evaluation** — for each *(conversation,
+completion, rubric-item)* it ships the binary judgments of 2+ physicians, so we can compute
+*real* judge↔human agreement offline. We replicate OpenAI simple-evals' metric verbatim
+(**balanced pairwise F1** over met/unmet), report **Cohen's κ** + raw agreement with bootstrap
+95% CIs, and compare every rater against the **physician-vs-physician ceiling**.
+
+A strong frontier model graded **120 items blind** (the physician labels held out) using the
+verbatim HealthBench grader. The result:
+
+| vs physicians | Balanced F1 | Cohen's κ | Raw agree |
+|---|---|---|---|
+| **strong-model judge** | **0.697** [0.61, 0.77] | **0.394** [0.23, 0.54] | 0.736 |
+| _physician ceiling (human)_ | _0.719_ [0.63, 0.80] | _0.437_ | _0.745_ |
+
+The judge is **physician-equivalent** — within 0.05 of the human ceiling on *both* metrics, CIs
+overlapping. But the ceiling itself is only **moderate** (κ≈0.44): rubric-item grading is
+intrinsically subjective. So by policy the judge is **not headline-eligible** (absolute κ < 0.40)
+and open-ended scores are kept **auxiliary** — exactly the conservative default. The leaderboard
+enforces this: judge-scored datasets land in a separate *🧪 Auxiliary* tier until a calibration
+report marks the judge headline-eligible (`data/calibration/calibration_report.md`).
+
+```bash
+# regenerate the frozen physician-labeled set, then score a reviewer's blind labels
+python -m medeval calibrate --rebuild-from <oss_meta_eval.jsonl URL/path>
+python -m medeval calibrate --labels data/calibration/healthbench_meta_strongmodel_labels.jsonl
+# …or calibrate a live API judge against the same physician gold (same code path the leaderboard uses)
+python -m medeval calibrate --config configs/example_open_safety.yaml --judge gpt-4.1 --strict
+```
+
+> TCMEval-SDT / MTCMB ship no physician labels, so their open-ended scores inherit **auxiliary**
+> status until a TCM domain expert supplies a labels file — the harness scores it identically.
 
 ---
 
