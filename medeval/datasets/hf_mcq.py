@@ -50,6 +50,11 @@ class HFMCQAdapter(DatasetAdapter):
         self.path = config.get("path")
         self.name = config.get("name")
         self.split = config.get("split")  # default chosen per-mode in load()
+        # pin to an immutable dataset commit for reproducibility. For ``path`` loads
+        # it is passed to ``load_dataset(revision=...)``; for ``data_files`` URLs,
+        # pin the URL itself (e.g. .../resolve/<sha>/... or raw.githubusercontent
+        # .../<sha>/...). See configs/catalog_mcq.yaml.
+        self.revision = config.get("revision")
         # data_files escape hatch: load raw json/csv/parquet directly, bypassing a
         # dataset's (possibly broken / removed) loading script. e.g. CMB on
         # datasets>=5 errors via the script but loads fine as raw json data_files.
@@ -92,6 +97,8 @@ class HFMCQAdapter(DatasetAdapter):
     def load(self) -> list[Sample]:
         from datasets import load_dataset  # lazy
 
+        # reset reliability counters (read by `medeval preflight`)
+        self.load_stats = {"seen": 0, "kept": 0, "dropped": {}}
         if self.image_zip:  # fetch + unzip the images archive once
             from ..assets import ensure_image_base
             self.image_base = ensure_image_base(self.image_zip, self.image_base or None)
@@ -99,7 +106,11 @@ class HFMCQAdapter(DatasetAdapter):
             self._answer_map = self._load_answer_map()
         samples: list[Sample] = []
         if self.data_files:  # raw-file mode (json/csv/parquet): single -> "train"
-            ds = load_dataset(self.format, data_files=self.data_files,
+            # localize URL(s) via the atomic+retrying downloader first — load_dataset's
+            # own HTTP streaming truncates large files behind some proxies (IncompleteRead)
+            # and leaves no recoverable cache. Local paths load deterministically.
+            data_files = self._localize(self.data_files)
+            ds = load_dataset(self.format, data_files=data_files,
                               split=self.split or "train")
             self._ingest(ds, None, samples)
             return samples
@@ -109,6 +120,8 @@ class HFMCQAdapter(DatasetAdapter):
             kwargs: dict[str, Any] = {"split": self.split or "test"}
             if cfg:
                 kwargs["name"] = cfg
+            if self.revision:
+                kwargs["revision"] = self.revision
             if self.trust_remote_code:
                 kwargs["trust_remote_code"] = True
             ds = load_dataset(self.path, **kwargs)
@@ -116,20 +129,41 @@ class HFMCQAdapter(DatasetAdapter):
                 return samples
         return samples
 
+    def _localize(self, data_files):
+        """Download URL ``data_files`` to the local cache via the robust streamer
+        (atomic .part rename + retry + size check); leave local paths untouched."""
+        import hashlib
+        from ..assets import CACHE_DIR, _download_stream
+        def one(u):
+            s = str(u)
+            if not s.startswith(("http://", "https://")):
+                return s
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            h = hashlib.sha256(s.encode()).hexdigest()[:16]
+            tail = s.split("?")[0].rsplit("/", 1)[-1]
+            ext = tail.rsplit(".", 1)[-1] if "." in tail else "dat"
+            ext = ext if 0 < len(ext) <= 6 else "dat"
+            return str(_download_stream(s, CACHE_DIR / f"df_{h}.{ext}"))
+        return [one(u) for u in data_files] if isinstance(data_files, list) else one(data_files)
+
     def _load_answer_map(self) -> dict[str, Any]:
         import hashlib
-        import urllib.request
-        from .local_json import CACHE_DIR
+        from ..assets import CACHE_DIR, _download_stream
         spec = self.answer_join
         url = spec["data_files"]
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         h = hashlib.sha256(url.encode()).hexdigest()[:16]
         dest = CACHE_DIR / f"{self.id}_answers_{h}.json"
-        if not dest.exists():
-            req = urllib.request.Request(url, headers={"User-Agent": "medeval/1.0"})
-            with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
-                f.write(r.read())
-        data = json.loads(dest.read_text(encoding="utf-8"))
+        data = None
+        for _ in range(2):  # re-fetch once if a prior run left a truncated/empty cache
+            _download_stream(url, dest)
+            try:
+                data = json.loads(dest.read_text(encoding="utf-8"))
+                break
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+                dest.unlink(missing_ok=True)  # poisoned cache -> force a clean re-download
+        if data is None:
+            raise RuntimeError(f"answer_join file failed to download/parse: {url}")
         if isinstance(data, dict):
             data = data.get("data", list(data.values()))
         key, val = spec.get("key", "id"), spec.get("value", "answer")
@@ -138,6 +172,7 @@ class HFMCQAdapter(DatasetAdapter):
     def _ingest(self, ds, cfg, samples: list[Sample]) -> bool:
         """Append samples from one loaded split; return True if the limit was hit."""
         for i, row in enumerate(ds):
+            self.load_stats["seen"] += 1
             if self._answer_map is not None:  # inject joined gold by key
                 row = dict(row)
                 rid = str(row.get(self.answer_join.get("key", "id")))
@@ -146,9 +181,14 @@ class HFMCQAdapter(DatasetAdapter):
             s = self._row_to_sample(row, cfg, i)
             if s is not None:
                 samples.append(s)
+                self.load_stats["kept"] += 1
             if self.limit and len(samples) >= self.limit:
                 return True
         return False
+
+    def _drop(self, reason: str) -> None:
+        d = self.load_stats.setdefault("dropped", {})
+        d[reason] = d.get(reason, 0) + 1
 
     def _resolve_options(self, row: dict[str, Any]) -> tuple[list[str], list[str]]:
         """Return (choices, keys) where keys are the source letter/keys if any.
@@ -267,8 +307,10 @@ class HFMCQAdapter(DatasetAdapter):
         try:
             choices, keys = self._resolve_options(row)
         except (KeyError, TypeError):
+            self._drop("options_error")
             return None
         if not choices:
+            self._drop("no_options")
             return None
         qfield = self.fm.get("question")
         question = str(row[qfield]) if qfield else self.question_text
@@ -287,11 +329,13 @@ class HFMCQAdapter(DatasetAdapter):
         if self.answer_format == "multi":
             idxs = self._gold_indices(row, choices, keys)
             if not idxs:
+                self._drop("answer_unparsed")
                 return None
             reference["indices"] = idxs
         else:
             gi = self._gold_index(row, choices, keys)
             if gi is None or gi >= len(choices):
+                self._drop("answer_unparsed")
                 return None
             reference = {"index": gi, "letter": LETTERS[gi], "text": choices[gi]}
 

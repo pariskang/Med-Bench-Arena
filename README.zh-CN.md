@@ -45,7 +45,7 @@ python -m medeval run configs/example_smoke.yaml
 
 ## 📑 目录
 
-[设计动机](#-设计动机) · [架构](#-架构) · [安装](#-安装) · [快速开始](#-快速开始) · [基准目录](#-基准目录) · [后端](#-后端) · [指标](#-指标与评审) · [智能体](#-智能体) · [多模态](#-多模态舌象--影像) · [中医](#-中医原生支持) · [分布式](#-分布式调度) · [榜单提交](#-榜单提交) · [扩展](#-扩展) · [项目结构](#-项目结构) · [引用](#-引用) · [贡献](#-参与贡献) · [许可](#-许可)
+[设计动机](#-设计动机) · [架构](#-架构) · [安装](#-安装) · [快速开始](#-快速开始) · [可靠性](#-可靠性与可复现) · [基准目录](#-基准目录) · [后端](#-后端) · [指标](#-指标与评审) · [智能体](#-智能体) · [多模态](#-多模态舌象--影像) · [中医](#-中医原生支持) · [分布式](#-分布式调度) · [榜单提交](#-榜单提交) · [扩展](#-扩展) · [项目结构](#-项目结构) · [引用](#-引用) · [贡献](#-参与贡献) · [许可](#-许可)
 
 ---
 
@@ -122,6 +122,29 @@ models:
 import yaml, medeval
 medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 ```
+
+---
+
+## 🔬 可靠性与可复现
+
+选择题评测要可信，前提是数据确实是你以为的那份。两道防线：
+
+- **固定 revision** —— 每个核心选择题基准都锁定到一个不可变的提交，评测集永不会在你脚下悄悄改变。HF 仓库用 `revision: <sha>`（传给 `load_dataset`）；原始文件源把提交嵌进 URL（`…/resolve/<sha>/…`、`raw.githubusercontent/…/<sha>/…`）。大文件经一个原子、**支持 HTTP Range 断点续传**的下载器获取 —— 能扛住会截断大响应的代理，且一次失败的下载绝不会污染缓存。
+- **`preflight`** —— **无需模型**即可剖析每个数据集：样本数、选项数分布、**答案解析成功率**、以及前几条样例。在花掉任何一个 token 之前先跑它：
+
+```bash
+python -m medeval preflight configs/catalog_mcq.yaml          # 所有数据集，完整加载
+python -m medeval preflight configs/catalog_mcq.yaml --strict # CI：任一解析率 < 100% 则非零退出
+```
+
+```
+✓ cmb_test   [hf_mcq]
+    样本数 samples        : 11200 of 11200 rows
+    选项数 option dist     : {3: 1, 4: 1201, 5: 9956, 6: 42}
+    解析率 answer parse    : 100.0%  ████████████████████
+```
+
+解析率低于 100% 意味着有行被丢弃（`field_map` 映射错、答案编码异常、选项解析不出来）—— `preflight` 会按原因列出它们，让你去修配置，而不是去猜症状。
 
 ---
 
@@ -289,7 +312,7 @@ medeval/
 ├── distributed.py             # 分片 · 合并 · 本地/Ray/Slurm
 ├── submit.py                  # OpenCompass / MedBench 导出
 ├── assets.py                  # 自动下载 + 解压 images.zip
-└── cli.py                     # python -m medeval run|list|export|merge|pool|slurm|kg|fetch
+└── cli.py                     # python -m medeval run|preflight|list|export|merge|pool|slurm|kg|fetch
 configs/                       # 声明式、已实测的运行规格
 tests/                         # 10 个离线测试套件（无 key / GPU / 网络）
 DATASETS.md                    # 各数据集获取说明、注意事项、字段映射

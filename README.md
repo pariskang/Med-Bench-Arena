@@ -45,7 +45,7 @@ python -m medeval run configs/example_smoke.yaml
 
 ## 📑 Table of contents
 
-[Why](#-why) · [Architecture](#-architecture) · [Install](#-install) · [Quick start](#-quick-start) · [Benchmarks](#-benchmark-catalog) · [Backends](#-backends) · [Metrics](#-metrics--judge) · [Agents](#-agents) · [Multimodal](#-multimodal-舌象--影像) · [TCM](#-traditional-chinese-medicine-中医) · [Distributed](#-distributed-scheduling) · [Submission](#-leaderboard-submission) · [Extending](#-extending) · [Layout](#-project-layout) · [Citation](#-citation) · [Contributing](#-contributing) · [License](#-license)
+[Why](#-why) · [Architecture](#-architecture) · [Install](#-install) · [Quick start](#-quick-start) · [Reliability](#-reliability--reproducibility) · [Benchmarks](#-benchmark-catalog) · [Backends](#-backends) · [Metrics](#-metrics--judge) · [Agents](#-agents) · [Multimodal](#-multimodal-舌象--影像) · [TCM](#-traditional-chinese-medicine-中医) · [Distributed](#-distributed-scheduling) · [Submission](#-leaderboard-submission) · [Extending](#-extending) · [Layout](#-project-layout) · [Citation](#-citation) · [Contributing](#-contributing) · [License](#-license)
 
 ---
 
@@ -122,6 +122,29 @@ Outputs land in `results/<run>/`: per-sample `detail__<model>__<ds>.jsonl`, plus
 import yaml, medeval
 medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 ```
+
+---
+
+## 🔬 Reliability & reproducibility
+
+MCQ evaluation is only trustworthy if the data is exactly what you think it is. Two guards:
+
+- **Pinned revisions** — every headline MCQ benchmark is locked to an immutable commit, so the eval set can never silently change. HF repos use `revision: <sha>` (passed to `load_dataset`); raw-file sources embed the commit in the URL (`…/resolve/<sha>/…`, `raw.githubusercontent/…/<sha>/…`). Large pinned files download via an atomic, **HTTP-Range-resuming** fetcher — robust to proxies that truncate big responses, and a failed download never poisons the cache.
+- **`preflight`** — profile every dataset *without a model*: sample count, option-count distribution, **answer-parse success rate**, and the first few examples. Run it before you spend a single token:
+
+```bash
+python -m medeval preflight configs/catalog_mcq.yaml          # all datasets, full load
+python -m medeval preflight configs/catalog_mcq.yaml --strict # CI: non-zero exit if any parse < 100%
+```
+
+```
+✓ cmb_test   [hf_mcq]
+    样本数 samples        : 11200 of 11200 rows
+    选项数 option dist     : {3: 1, 4: 1201, 5: 9956, 6: 42}
+    解析率 answer parse    : 100.0%  ████████████████████
+```
+
+A parse rate below 100% means rows are being dropped (a mis-mapped `field_map`, an unexpected answer encoding, options that don't parse) — `preflight` lists them by reason so you fix the config, not the symptoms.
 
 ---
 
@@ -289,7 +312,7 @@ medeval/
 ├── distributed.py             # sharding · merge · local/Ray/Slurm
 ├── submit.py                  # OpenCompass / MedBench export
 ├── assets.py                  # auto download + unzip images.zip
-└── cli.py                     # python -m medeval run|list|export|merge|pool|slurm|kg|fetch
+└── cli.py                     # python -m medeval run|preflight|list|export|merge|pool|slurm|kg|fetch
 configs/                       # declarative, live-verified run specs
 tests/                         # 10 offline suites (no keys / GPU / network)
 DATASETS.md                    # per-dataset access notes, caveats, field maps

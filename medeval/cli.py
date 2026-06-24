@@ -91,6 +91,22 @@ def cmd_slurm(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_preflight(args: argparse.Namespace) -> int:
+    from .preflight import preflight, format_reports
+    cfg = _load_config(args.config)
+    ids = args.datasets.split(",") if args.datasets else None
+    reports = preflight(cfg, dataset_ids=ids, limit=args.limit, n_examples=args.examples)
+    print(format_reports(reports))
+    if args.output:
+        import json
+        Path(args.output).write_text(
+            json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[medeval] wrote preflight report -> {args.output}")
+    # exit non-zero if any dataset errored or parsed < 100% (CI-friendly)
+    bad = any("error" in r or r.get("answer_parse_rate", 1.0) < 0.999 for r in reports)
+    return 1 if (bad and args.strict) else 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     print("providers:", ", ".join(available_providers()))
     print("adapters :", ", ".join(available_adapters()))
@@ -120,6 +136,20 @@ def main(argv: list[str] | None = None) -> int:
                        help="total shards for distributed runs")
     p_run.add_argument("--shard", type=int, default=0, help="this worker's shard index")
     p_run.set_defaults(func=cmd_run)
+
+    p_pre = sub.add_parser("preflight",
+                           help="profile datasets (count · option dist · answer-parse rate · examples) — no model")
+    p_pre.add_argument("config", help="path to the YAML run spec")
+    p_pre.add_argument("--datasets", default=None,
+                       help="comma-separated dataset ids to check (default: all in the config)")
+    p_pre.add_argument("--limit", type=int, default=None,
+                       help="cap rows per dataset (default: full load, for a true count)")
+    p_pre.add_argument("--examples", type=int, default=3, help="sample rows to show per dataset")
+    p_pre.add_argument("--output", "--out", dest="output", default=None,
+                       help="also write the full report as JSON")
+    p_pre.add_argument("--strict", action="store_true",
+                       help="exit non-zero if any dataset errors or parses < 100%%")
+    p_pre.set_defaults(func=cmd_preflight)
 
     p_list = sub.add_parser("list", help="list registered providers / adapters / metrics")
     p_list.set_defaults(func=cmd_list)

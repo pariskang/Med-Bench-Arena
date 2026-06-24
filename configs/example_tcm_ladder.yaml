@@ -20,11 +20,12 @@ models:
   # - {id: mock-model, type: mock, behavior: auto}     # offline dry-run
 
 datasets:
-  # --- text MCQ (no change needed; A-E columns, multi-answer) ---
+  # --- text MCQ (A-E columns, multi-answer) ---
   - id: tcm_ladder_mc
     adapter: hf_mcq
     format: parquet
-    data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/main/multiChoice.parquet
+    # pinned to an immutable commit (resolve/<sha>) for reproducibility
+    data_files: https://huggingface.co/datasets/timzzyus/TCM-Ladder/resolve/4e875657f9ff650df432427221bb4f957e30b6f0/multiChoice.parquet
     split: train
     field_map: {question: question, options: [A, B, C, D, E], answer: answer}
     answer_format: multi          # "C" and "ABCDE" both handled; blank trailing E dropped

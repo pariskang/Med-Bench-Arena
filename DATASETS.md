@@ -7,6 +7,42 @@ caveats below are the things that actually bite you.
 
 Legend: ✅ open & config-only · ⚠️ open but needs care · 🔒 gated / manual step.
 
+### Reproducibility — pinned revisions + `preflight`
+
+The headline MCQ sets are **pinned to an immutable commit** so the eval set can't
+change underneath you. HF-repo loads use `revision: <sha>` (→ `load_dataset`);
+raw-file sources embed the commit in the URL (`…/resolve/<sha>/…` for HF,
+`raw.githubusercontent/…/<sha>/…` for GitHub). Current pins (`catalog_mcq.yaml`,
+`example_tcm_ladder.yaml`):
+
+| Dataset | Pin (commit) |
+|---|---|
+| MedQA `GBaker/MedQA-USMLE-4-options` | `0fb93dd2…` |
+| MedMCQA `openlifescienceai/medmcqa` | `91c6572c…` |
+| MMLU `cais/mmlu` | `c30699e8…` |
+| PubMedQA `qiaojin/PubMedQA` | `9001f285…` |
+| CMB `FreedomIntelligence/CMB` (HF question / GitHub answer) | `935fbc09…` / `6c8ece46…` |
+| CMExam `williamliujl/CMExam` (GitHub) | `fadb22c8…` |
+| TCM-Ladder text `timzzyus/TCM-Ladder` (HF) | `4e875657…` |
+
+Before spending tokens, profile the data with **`preflight`** (sample count ·
+option-count distribution · answer-parse success rate · examples — *no model*):
+
+```bash
+python -m medeval preflight configs/catalog_mcq.yaml            # full report
+python -m medeval preflight configs/catalog_mcq.yaml --strict   # CI gate (<100% → exit 1)
+```
+
+A parse rate < 100% means rows are dropped (mis-mapped `field_map`, an unexpected
+answer encoding, options that don't parse); `preflight` lists drops by reason.
+Verified profile (full load): MedQA 1273 · MedMCQA 4183 · PubMedQA 1000 · MMLU 1089
+· CMB 11200 · CMExam 6810/6811 · TCM-Ladder text 12775/12778 — all **100%** parse
+(CMExam/TCM-Ladder each have a couple of genuinely malformed source rows, reported).
+
+> ⚠️ **YAML gotcha** (caught by `preflight`): bare `yes`/`no`/`on`/`off` are YAML
+> booleans. `inject_options: [yes, no, maybe]` silently becomes `[True, False,
+> "maybe"]` — **quote them**: `["yes", "no", "maybe"]`.
+
 ---
 
 ## 1. Multiple-choice (`hf_mcq`, `tcmbench`)

@@ -21,9 +21,15 @@ models:
 
 datasets:
   # ---- English ----------------------------------------------------------
+  # NOTE: every dataset below is PINNED to an immutable commit (revision / URL hash)
+  # so the eval set can never silently change underneath you. `revision:` is passed
+  # to load_dataset(); data_files/answer URLs embed the commit (resolve/<sha> or
+  # raw.githubusercontent/.../<sha>/). Profile after pinning with:
+  #     python -m medeval preflight configs/catalog_mcq.yaml
   - id: medqa_usmle           # USMLE, 1273 test Qs, options dict, letter answer
     adapter: hf_mcq
     path: GBaker/MedQA-USMLE-4-options
+    revision: 0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18
     split: test
     field_map: {question: question, options: options, answer: answer_idx}
     answer_format: letter
@@ -32,6 +38,7 @@ datasets:
   - id: medmcqa               # 4 separate opt cols, int cop. USE validation:
     adapter: hf_mcq           # the test split has cop=-1 (labels withheld).
     path: openlifescienceai/medmcqa
+    revision: 91c6572c454088bf71b679ad90aa8dffcd0d5868
     split: validation
     field_map: {question: question, options: [opa, opb, opc, opd], answer: cop}
     answer_format: index
@@ -40,16 +47,18 @@ datasets:
   - id: pubmedqa              # yes/no/maybe; no options column -> inject them
     adapter: hf_mcq
     path: qiaojin/PubMedQA
+    revision: 9001f2853fb87cab8d220904e0de81ac6973b318
     name: pqa_labeled
     split: train              # only split that exists per config
     field_map: {question: question, options: null, answer: final_decision, context: context}
     answer_format: text
-    inject_options: [yes, no, maybe]
+    inject_options: ["yes", "no", "maybe"]   # MUST quote — bare yes/no are YAML booleans!
     metrics: [mcq_accuracy]
 
   - id: mmlu_medical          # 6 medical subjects, list choices, int answer
     adapter: hf_mcq
     path: cais/mmlu
+    revision: c30699e8356da336a370243923dbaf21066bb9fe
     name: [anatomy, clinical_knowledge, college_medicine, college_biology, medical_genetics, professional_medicine]
     split: test
     field_map: {question: question, options: choices, answer: answer}
@@ -60,10 +69,10 @@ datasets:
   - id: cmb_test              # FULL official CMB-Exam test (11,200) — gold answers are
     adapter: hf_mcq           # public on GitHub, joined to the HF questions by `id`.
     path: FreedomIntelligence/CMB
-    data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/main/CMB-Exam/CMB-test/CMB-test-choice-question-merge.json
+    data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/935fbc09edf1303d89872b21265ff597f426ac0d/CMB-Exam/CMB-test/CMB-test-choice-question-merge.json
     field_map: {question: question, options: option, answer: answer}
     answer_format: multi      # dict options A-F (F often null); answer may be "BCDE"
-    answer_join: {data_files: https://raw.githubusercontent.com/FreedomIntelligence/CMB/main/data/CMB-test-choice-answer.json, key: id, value: answer}
+    answer_join: {data_files: https://raw.githubusercontent.com/FreedomIntelligence/CMB/6c8ece46097dae736c6805dd3b831e1a38c08971/data/CMB-test-choice-answer.json, key: id, value: answer}
     metrics: [mcq_accuracy]
 
   # CMB-Exam train (269,359, answers inline) — the large scorable set:
@@ -82,7 +91,7 @@ datasets:
   - id: cmexam                # williamliujl/CMExam, CSV; options packed inline
     adapter: hf_mcq
     format: csv
-    data_files: https://raw.githubusercontent.com/williamliujl/CMExam/main/data/test_with_annotations.csv
+    data_files: https://raw.githubusercontent.com/williamliujl/CMExam/fadb22c89beb1b7115dc36460ba792eb96b7b972/data/test_with_annotations.csv
     options_inline: true      # "A text\nB text\n..." in one column
     field_map: {question: Question, options: Options, answer: Answer}
     answer_format: multi      # multi-correct as concatenated letters ("ABCE")

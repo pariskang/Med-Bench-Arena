@@ -74,6 +74,9 @@ class DatasetAdapter(abc.ABC):
         self.metrics: list[str] = [n for n, _ in self.metric_specs]
         # optional per-dataset judge override (model id) for llm_judge
         self.judge: str | None = config.get("judge")
+        # reliability counters populated during load() (read by `medeval preflight`):
+        # {"seen": int, "kept": int, "dropped": {reason: count}}
+        self.load_stats: dict[str, Any] = {}
 
     @abc.abstractmethod
     def load(self) -> list[Sample]:
