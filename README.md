@@ -35,7 +35,7 @@ python -m medeval run configs/example_smoke.yaml
 
 - 🧩 **Decoupled by design** — datasets, backends, and metrics depend *only* on the schema, never on each other. Add a similar dataset = edit YAML, zero code.
 - 📚 **40+ live-verified benchmarks** — MCQ, open-ended (LLM-judge), safety, multimodal (舌象/影像), and interactive agents — across English & Chinese.
-- ⚖️ **Medical ethics & safety, first-class** — a dedicated [`catalog_ethics_safety.yaml`](configs/catalog_ethics_safety.yaml): principlism MCQ (MedEthicsQA · PrinciplismQA · MedEthicEval · TCM_Humanities), open 伦理两难, and AI-safety red-teaming (CARES-18K, refusal/jailbreak/over-refusal) — the axis where models lag most.
+- ⚖️ **Medical ethics & safety, first-class** — a dedicated [`catalog_ethics_safety.yaml`](configs/catalog_ethics_safety.yaml): principlism MCQ (MedEthicsQA · PrinciplismQA · MedEthicEval · TCM_Humanities), open 伦理两难, AI-safety red-teaming (CARES-18K), and **health-equity bias** (EquityMedQA, 6-dimension rubric) — the axis where models lag most.
 - 🀄 **Traditional Chinese Medicine, first-class** — 辨证证型链, 方剂结构匹配 (君臣佐使), 经络腧穴, 古籍本体, 舌象/脉象, real 名老中医医案, plus a downloadable **knowledge graph** of the classics.
 - 🤖 **Real agent loops** — AgentClinic (OSCE + NEJM), **MedAgentBench** against a live **FHIR** EHR server, and **MediQ** proactive questioning — scored with `pass^k`.
 - 🔌 **Any backend** — local **HF/vLLM** (batched), **Poe**, and **LiteLLM** (100+ providers + the recommended judge). All swappable by one line of YAML.
@@ -180,6 +180,7 @@ A representative slice (all wired & verified against live sources; **30+** docum
 | **TCM_Humanities** ⚖️ | `hf_mcq` | mcq_accuracy | `TCMLM/TCM_Humanities` — **500** 医学人文/伦理/卫生法 MCQ (multi) |
 | **MedEthicsBench** ⚖️ | `local_json` | llm_judge (rubric) | `pariskang/MedEthicsBench` — key-point rubric (forward-compatible) |
 | **CARES-18K** 🛡️ | `local_json` | llm_judge (safety) | `HFXM/CARES-18K` — **9,239** red-team prompts (8 principles × 4 harm × 4 strategy) |
+| **EquityMedQA** 🛡️ | `local_json` (prep) | llm_judge (bias rubric) | `katielink/EquityMedQA` — **~6,962** health-equity adversarial Q, 6-dim bias rubric |
 | **real_clinical_cases** 🀄 | `local_json` | syndrome_chain + llm_judge | `TCMLM/real_clinical_cases…` — **500** 名老中医医案 (辨证论治) |
 | **AgentClinic** | `agentclinic` | pass_k | `SamuelSchmidgall/AgentClinic` — MedQA **214** + NEJM **120** |
 | **MedAgentBench** | `medagentbench` | pass_k | live FHIR (Docker); **per-task payload grader** (+ gated `refsol.py`) |
@@ -406,6 +407,6 @@ for t in tests/test_*.py; do python "$t"; done      # all 12 should print OK
 
 ## 🙏 Acknowledgements
 
-Built on the shoulders of the open benchmarks it wires — MedQA, MedMCQA, PubMedQA, MMLU, CMB, CMExam, TCMBench, TCM-Ladder, HealthBench, LLMEval-Med, TCMEval, MTCMB, CSEDB, MedSafetyBench, AgentClinic, MedAgentBench, MediQ, and the ethics-&-safety sets MedEthicsBench, MedEthicsQA, PrinciplismQA, MedEthicEval, TCM_Humanities, CARES-18K, plus the TCMLM real 名老中医医案 corpus — and the backends that run them (HuggingFace, vLLM, Poe, LiteLLM). Thank you to every dataset author.
+Built on the shoulders of the open benchmarks it wires — MedQA, MedMCQA, PubMedQA, MMLU, CMB, CMExam, TCMBench, TCM-Ladder, HealthBench, LLMEval-Med, TCMEval, MTCMB, CSEDB, MedSafetyBench, AgentClinic, MedAgentBench, MediQ, and the ethics-&-safety sets MedEthicsBench, MedEthicsQA, PrinciplismQA, MedEthicEval, TCM_Humanities, CARES-18K, EquityMedQA, plus the TCMLM real 名老中医医案 corpus — and the backends that run them (HuggingFace, vLLM, Poe, LiteLLM). Thank you to every dataset author.
 
 <div align="center"><sub>Made for rigorous, reproducible medical & TCM model evaluation. ⭐ Star us if this is useful!</sub></div>

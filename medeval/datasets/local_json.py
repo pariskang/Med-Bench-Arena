@@ -83,6 +83,10 @@ class LocalJSONAdapter(DatasetAdapter):
         self.image_zip = config.get("image_zip")   # auto download+unzip images archive
         self.image_strip = config.get("image_strip", "")
         self.prompt_template = config.get("prompt_template")
+        # a constant rubric applied to every sample when no per-item rubric resolves
+        # (e.g. EquityMedQA's questions-only files + a shared bias rubric). Normalized
+        # to the same shape as field-mapped rubrics.
+        self.default_rubric = self._normalize_rubric(config.get("default_rubric"))
         if not self.metric_specs:
             self.metric_specs = [("llm_judge", {})]
             self.metrics = ["llm_judge"]
@@ -204,6 +208,8 @@ class LocalJSONAdapter(DatasetAdapter):
             return None
 
         rubric = self._normalize_rubric(self._resolve(self.fm.get("rubric"), root, item))
+        if rubric is None:
+            rubric = self.default_rubric          # constant fallback (e.g. EquityMedQA bias rubric)
         raw_ref = self._resolve(self.fm.get("reference"), root, item)
         reference = self._stringify_ref(raw_ref)
         label = self._resolve(self.fm.get("label"), root, item)

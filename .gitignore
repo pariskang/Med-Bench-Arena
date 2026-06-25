@@ -12,6 +12,8 @@ venv/
 # MedEval outputs & caches (regenerated)
 results/
 data/cache/
+# EquityMedQA full prep output (regenerate via scripts/prep_equitymedqa.py; demo sample is committed)
+data/equitymedqa.jsonl
 
 # Local model/data artifacts
 *.safetensors
