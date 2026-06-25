@@ -1,0 +1,150 @@
+# Catalog: medical ETHICS & SAFETY benchmarks (医学伦理 / 安全).
+# A focused arena for the axis where models systematically lag — medical-ethics
+# reasoning (principlism, informed consent, end-of-life, 伦理两难) and AI safety
+# (refusing harmful medical requests, jailbreak robustness, over-refusal).
+#
+# Every entry verified against its LIVE source (2026-06) — real repo ids, file
+# paths, column names, answer encodings. Default offline mock model + mock judge
+# (still downloads the REAL data); swap in a real backend + judge for live numbers
+# (see configs/example_open_safety.yaml / example_api_backends.yaml).
+#
+#   python -m medeval run       configs/catalog_ethics_safety.yaml --limit 5
+#   python -m medeval preflight configs/catalog_ethics_safety.yaml          # the MCQ entries
+run:
+  output_dir: ./results/ethics_safety
+  concurrency: 12
+  cache: true
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 1024}
+  judge_model: mock-judge        # real: gpt-4.1 / deepseek-r1 (judge_only) — see example_open_safety.yaml
+
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+  # - {id: gpt-4.1,     type: litellm, model: openai/gpt-4.1, api_key_env: OPENAI_API_KEY, judge_only: true}
+  # - {id: deepseek-r1, type: litellm, model: deepseek/deepseek-reasoner, api_key_env: DEEPSEEK_API_KEY, judge_only: true}
+
+datasets:
+  # ===================== Medical ethics — multiple choice =====================
+  # MedEthicsQA (arXiv 2506.22808) — 5,623 medical-ethics MCQ, bilingual, drawn from
+  # question banks + PubMed scenarios. options dict A-D, gold `correct` is the letter.
+  - id: medethicsqa_mcq
+    adapter: hf_mcq
+    format: json
+    data_files: https://raw.githubusercontent.com/JianhuiWei7/MedEthicsQA/main/MedEthicsQA_MCQ.json
+    field_map: {question: question, options: options, answer: correct}
+    answer_format: letter
+    metrics: [mcq_accuracy]
+
+  # PrinciplismQA-Demo (FreedomIntelligence, arXiv 2508.05132) — public 100-item demo
+  # of the 2,182-Q Knowledge subset. options dict A-D, gold `correct_answer` letter.
+  - id: principlism_mcqa
+    adapter: hf_mcq
+    format: json
+    data_files: https://raw.githubusercontent.com/FreedomIntelligence/PrinciplismQA-Demo/main/data/knowledge-mcqa.json
+    field_map: {question: question, options: options, answer: correct_answer}
+    answer_format: letter
+    split_type: demo               # 100-item public demo (full Knowledge set is 2,182)
+    metrics: [mcq_accuracy]
+
+  # MedEthicEval (X-LANCE, NAACL 2025) — Chinese medical-ethics knowledge, 629 single-
+  # choice. `options` is a stringified list `['A.…','B.…']` (auto-split by the adapter
+  # into text + A/B/C keys), gold `answer` letter.
+  - id: medethiceval_knowledge
+    adapter: hf_mcq
+    format: csv
+    data_files: https://raw.githubusercontent.com/X-LANCE/MedEthicEval/main/dataset/medical_ethics_knowledge.csv
+    field_map: {question: question, options: options, answer: answer}
+    answer_format: letter
+    metrics: [mcq_accuracy]
+
+  # TCM_Humanities (TCMLM) — 500 medical-humanities / ethics / health-law MCQ from the
+  # Chinese TCM-licensing humanities section (处方管理/医疗机构条例/伦理学…). Inline options
+  # "A.…\nB.…" in one column; single AND multi answer (419 single + 81 multi -> `multi`).
+  - id: tcm_humanities
+    adapter: hf_mcq
+    path: TCMLM/TCM_Humanities
+    revision: 3bfda762865f4e93d3f1aa3cd9d3c8bd16c5776a
+    split: train
+    options_inline: true
+    field_map: {question: 题干, options: 选项, answer: 答案}
+    answer_format: multi
+    metrics: [mcq_accuracy]
+
+  # ================ Medical ethics — open-ended (rubric / judge) ===============
+  # MedEthicsBench (pariskang) — bilingual HARD medical-ethics reasoning with a
+  # key-point rubric, expected principles & stakeholders.  NOTE: the published
+  # `data/benchmark.jsonl` is currently EMPTY (benchmark_meta.json n_items=0; the repo
+  # ships the generation *pipeline* + a 3.4 MB retrieval corpus). This config is
+  # forward-compatible: the schema (stem/context/key_points/reference_answer) is wired
+  # so the moment items are generated upstream they are scored with no further change.
+  - id: medethicsbench
+    adapter: local_json
+    task: open_qa
+    format: jsonl
+    source_url: https://raw.githubusercontent.com/pariskang/MedEthicsBench/main/data/benchmark.jsonl
+    field_map: {prompt: [context, stem], rubric: key_points, reference: reference_answer,
+                expected_principles: expected_principles, expected_stakeholders: expected_stakeholders}
+    split_type: gated              # benchmark.jsonl empty upstream today; populated by the generator
+    metrics: [llm_judge]
+
+  # PrinciplismQA-Demo open-ended — 126 case sub-questions, each with a principlism-
+  # grounded key-point/competency rubric. prompt=question, rubric=keypoint_competencies
+  # (criterion read from `keypoint`); `principles` (autonomy/beneficence/…) ride along.
+  - id: principlism_open
+    adapter: local_json
+    task: open_qa
+    format: json
+    source_url: https://raw.githubusercontent.com/FreedomIntelligence/PrinciplismQA-Demo/main/data/open-ended-rubric-principles.json
+    field_map: {prompt: question, rubric: keypoint_competencies, principles: principles}
+    split_type: demo
+    metrics: [llm_judge]
+
+  # MedEthicEval 伦理两难 — priority dilemma (300, a clear ethical inclination) and
+  # equilibrium dilemma (no obvious resolution). Open-ended; the judge scores the
+  # reasoning quality (no single gold answer — that is the point of the dilemma).
+  - id: medethiceval_priority
+    adapter: local_json
+    task: open_qa
+    format: csv
+    source_url: https://raw.githubusercontent.com/X-LANCE/MedEthicEval/main/dataset/medical_ethics_priority_dilemma.csv
+    field_map: {prompt: query}
+    metrics: [llm_judge]
+
+  - id: medethiceval_equilibrium
+    adapter: local_json
+    task: open_qa
+    format: csv
+    source_url: https://raw.githubusercontent.com/X-LANCE/MedEthicEval/main/dataset/medical_ethics_equilibrium_dilemma.csv
+    field_map: {prompt: query}
+    metrics: [llm_judge]
+
+  # ============ Medical AI safety (refusal / jailbreak / over-refusal) =========
+  # MedEthicEval violation detection — does the model flag the ethics violation in the
+  # scenario rather than comply? scenario+query -> safety judge.
+  - id: medethiceval_violation
+    adapter: local_json
+    task: safety
+    format: csv
+    source_url: https://raw.githubusercontent.com/X-LANCE/MedEthicEval/main/dataset/medical_ethics_detecting_violation.csv
+    field_map: {prompt: query, reference: scenario}
+    metrics: [llm_judge]
+
+  # CARES-18K (HFXM, arXiv 2505.11413) — 9,239 TEST prompts probing medical safety
+  # across 8 principles × 4 harm levels (0=benign over-refusal probe … 3=most harmful)
+  # × 4 strategies (direct / indirect / obfuscation / role-play). No reference answer —
+  # the 安全 judge scores refuse-harm / comply-safe; harmful_level/method ride along.
+  - id: cares_safety
+    adapter: local_json
+    task: safety
+    format: parquet
+    source_url: https://huggingface.co/datasets/HFXM/CARES-18K/resolve/49f6ff9caffe31bbd33b6272b72ef0b78a23ff26/data/test-00000-of-00001-48ff445f6c5e20b5.parquet
+    field_map: {prompt: prompt, harmful_level: harmful_level, method: method, principle_index: principle_index}
+    metrics: [llm_judge]
+
+  # ---- Documented but NOT config-only (see DATASETS.md "Ethics & Safety") -------
+  # EquityMedQA (katielink/EquityMedQA): 11 adversarial fairness question sets, but the
+  #   files are header-less single-column question lists with NO gold -> human/rubric
+  #   eval only; needs a prep step. HEx-PHI (LLM-Tuning-Safety): gated. CARES-VLM
+  #   (multimodal trustworthiness), JMedEthicBench (Japanese), FairMedQA, MedRiskEval.

@@ -381,6 +381,147 @@ Configs live in `configs/catalog_en_med.yaml`, `catalog_multimodal.yaml`,
 
 Prep one-liners: **TCM-Text-Exams** `json.dump([{**r,"section":s} for s,recs in d.items() for r in recs], ...)`; **TCMEval-PA** `openpyxl` → rows → json; both then load via `hf_mcq` `data_files`.
 
+---
+
+## Batch 3 — Medical ethics & safety (医学伦理 / 安全), verified 2026-06
+
+The axis where models systematically lag. Configs live in
+`configs/catalog_ethics_safety.yaml` (ethics/safety) and `configs/catalog_cn_tcm.yaml`
+(the TCM clinical corpus). ✅ = config-only · ⚠️ = one-time prep · 🔒 = gated/unreleased.
+Run them:
+
+```bash
+python -m medeval run       configs/catalog_ethics_safety.yaml --limit 5
+python -m medeval preflight configs/catalog_ethics_safety.yaml          # profiles the MCQ entries
+```
+
+Live preflight (full load, 2026-06): **MedEthicsQA 5623 · PrinciplismQA-MCQA 100 ·
+MedEthicEval-knowledge 629 · TCM_Humanities 500 — all 100 % answer-parse**; the
+open-ended/safety sets load **PrinciplismQA-open 126 · MedEthicEval priority/equilibrium
+100/100 · MedEthicEval-violation 236 · CARES-18K-test 9239** (preflight's answer-parse
+metric is MCQ-only, so these show `0 MCQ` by design — they are judge-scored, not parsed).
+
+### MedEthicsBench ✅ (forward-compatible) — `pariskang/MedEthicsBench`
+- The request's headline repo. It is a **medical-ethics question-generation pipeline**
+  (retrieval corpus → question generation → grading), not a static file. Its published
+  `data/benchmark.jsonl` is **currently empty** (`benchmark_meta.json` `n_items: 0`; the
+  generator had a failed run, see `question_failures.jsonl`); what ships today is a **3.4 MB
+  retrieval corpus** (`documents.jsonl`) of theory/case/regulation docs.
+- The `Question` schema (`med_ethics_bench/schemas.py`) is rich and rubric-ready: `stem`,
+  `context`, optional `options` (A–E, `is_correct`), `reference_answer`, `key_points`
+  (`{content, weight, required, category}`), `expected_principles`, `expected_stakeholders`,
+  `common_pitfalls`. We wire it **forward-compatibly**: `prompt: [context, stem]`,
+  `rubric: key_points` (criterion read from `content`, points from `weight`), `reference:
+  reference_answer`, with `expected_principles`/`expected_stakeholders` riding along. The
+  moment items are generated upstream they are scored with **no config change**; until then
+  the dataset cleanly yields 0 samples (a `WARNING`, not a crash). `split_type: gated`.
+  Offline coverage: `tests/test_adapters.py::test_local_json_medethicsbench_schema` exercises
+  the exact schema on a fixture so the mapping is guaranteed correct when the file fills.
+```yaml
+{task: open_qa, format: jsonl,
+ source_url: https://raw.githubusercontent.com/pariskang/MedEthicsBench/main/data/benchmark.jsonl,
+ field_map: {prompt: [context, stem], rubric: key_points, reference: reference_answer,
+             expected_principles: expected_principles, expected_stakeholders: expected_stakeholders}}
+```
+
+### TCM_Humanities ✅ — `TCMLM/TCM_Humanities`
+- 500 **medical-humanities / ethics / health-law** MCQ from the Chinese TCM-licensing
+  humanities section (处方管理办法, 医疗机构管理条例, 医学伦理学, 医学心理学…). Columns are
+  Chinese: `题干` (stem), `选项` (options, packed inline `"A.…\nB.…"` in one cell), `答案`
+  (letter), `解析` (explanation). **Single AND multi-answer** (419 single + 81 multi like
+  `"ABCDE"`) → `answer_format: multi`. Pinned to commit `3bfda762…`.
+```yaml
+{adapter: hf_mcq, path: TCMLM/TCM_Humanities, revision: 3bfda762865f4e93d3f1aa3cd9d3c8bd16c5776a,
+ split: train, options_inline: true,
+ field_map: {question: 题干, options: 选项, answer: 答案}, answer_format: multi}
+```
+
+### real_clinical_cases (名老中医真实医案) ⚠️ — `TCMLM/real_clinical_cases_of_Famous_Old_TCM_Doctors`
+- 500 **real clinical cases of famous senior TCM doctors** — a 辨证论治 corpus. The CSV
+  (`cases_old_utf8.csv`, a UTF-8-BOM pandas export) ships well-populated `故事` (case
+  narrative, 99 %), `主要症状`, `病因病机`, `中医诊断`, `证型` (standardized syndrome, 99 %),
+  `治则` (99 %); sparse `方剂` (38 %), `西医诊断` (15 %). Wired as `task: sdt`: read 故事 →
+  produce 中医诊断/证型/病机/治则, scored by `llm_judge` + **`syndrome_chain`** (证型→`label`,
+  病机→`pathogenesis`) + `rouge`. Pinned to commit `57d088e3…`.
+- ⚠️ **Leakage caveat** (documented, not papered over): because `故事` is a *complete physician's
+  record*, the 病因病机 and 治则 often appear verbatim in it — so this measures faithful
+  **extraction + standardization** of the 辨证论治 (the standardized `证型` label and `中医诊断`
+  are the genuine prediction targets), **not** blind differentiation. Hence `split_type:
+  validation` (a real-record corpus, not a held-out exam). For blind differentiation, truncate
+  `故事` at the physician's analysis. Loads via the BOM-tolerant CSV path (`utf-8-sig`).
+```yaml
+{task: sdt, format: csv,
+ source_url: https://huggingface.co/datasets/TCMLM/real_clinical_cases_of_Famous_Old_TCM_Doctors/resolve/57d088e3…/cases_old_utf8.csv,
+ prompt_template: "…请阅读后给出：①中医诊断 ②证型 ③病因病机 ④治则。\n\n【医案】\n{prompt}",
+ field_map: {prompt: 故事, label: 证型, pathogenesis: 病因病机, reference: 治则}}
+```
+
+### PrinciplismQA-Demo ✅ — `FreedomIntelligence/PrinciplismQA-Demo` (arXiv 2508.05132)
+- Public demo of a principlism-grounded clinical-ethics benchmark (full set 3,648).
+  Two wired views (`split_type: demo`):
+  - **Knowledge MCQ** (`data/knowledge-mcqa.json`, 100): `question`, `options` dict A–D,
+    gold `correct_answer` letter → `hf_mcq`.
+  - **Open-ended rubric** (`data/open-ended-rubric-principles.json`, 126 case sub-questions):
+    `question`, `principles` (autonomy/beneficence/non_maleficence/justice), and
+    `keypoint_competencies` (`[{keypoint, competency}]`) → `local_json` + `llm_judge` (criterion
+    read from the new **`keypoint`** alias; `principles` ride along). The 50-case
+    `open-ended-qa.json` (with per-case `ethical_issues`) is also available for case-level use.
+```yaml
+{adapter: hf_mcq, format: json,
+ data_files: https://raw.githubusercontent.com/FreedomIntelligence/PrinciplismQA-Demo/main/data/knowledge-mcqa.json,
+ field_map: {question: question, options: options, answer: correct_answer}, answer_format: letter}
+```
+
+### MedEthicsQA ✅ — `JianhuiWei7/MedEthicsQA` (arXiv 2506.22808)
+- **5,623 medical-ethics MCQ**, bilingual, from question banks + PubMed-derived scenarios
+  (the companion `MedEthicsQA_open.zip` adds 5,351 open-ended items). MCQ JSON: `question`,
+  `options` dict A–D, gold `correct` letter, `meta_data.categories`. Loads via `hf_mcq`
+  `data_files` (raw GitHub JSON). 100 % parse.
+```yaml
+{adapter: hf_mcq, format: json,
+ data_files: https://raw.githubusercontent.com/JianhuiWei7/MedEthicsQA/main/MedEthicsQA_MCQ.json,
+ field_map: {question: question, options: options, answer: correct}, answer_format: letter}
+```
+
+### MedEthicEval ✅ — `X-LANCE/MedEthicEval` (NAACL 2025, Chinese)
+- Four CSV subsets under `dataset/`:
+  - **knowledge** (629 single-choice): `question`, `options` is a **stringified Python list**
+    `['A.…','B.…']` — the `hf_mcq` adapter now auto-splits the lettered prefix into clean
+    text + A/B/C keys (`_strip_letter_prefix`); gold `answer` letter. 100 % parse.
+  - **priority_dilemma** (100, a clear ethical inclination) and **equilibrium_dilemma** (100,
+    no obvious resolution): `case`/`query` → `local_json` + `llm_judge` (open 伦理两难; no single
+    gold — that is the point).
+  - **detecting_violation** (236): `scenario`/`query` → `task: safety` (does the model flag the
+    ethics violation rather than comply?).
+```yaml
+{adapter: hf_mcq, format: csv,
+ data_files: https://raw.githubusercontent.com/X-LANCE/MedEthicEval/main/dataset/medical_ethics_knowledge.csv,
+ field_map: {question: question, options: options, answer: answer}, answer_format: letter}
+```
+
+### CARES-18K ✅ (safety red-team) — `HFXM/CARES-18K` (arXiv 2505.11413)
+- **9,239 test** prompts (18 K total) probing medical safety across **8 principles × 4
+  harm levels** (0 = benign, an over-refusal probe … 3 = most harmful) **× 4 strategies**
+  (direct / indirect / obfuscation / role-play). No reference answer — `task: safety` and the
+  default 安全 rubric judge refuse-harm / comply-safe; `harmful_level` / `method` /
+  `principle_index` ride along for slicing. Parquet source (pinned commit `49f6ff9c…`); fetched
+  via the robust HTTP-Range streamer (the raw parquet otherwise truncates behind some proxies —
+  `IncompleteRead`).
+```yaml
+{task: safety, format: parquet,
+ source_url: https://huggingface.co/datasets/HFXM/CARES-18K/resolve/49f6ff9c…/data/test-00000-of-00001-…parquet,
+ field_map: {prompt: prompt, harmful_level: harmful_level, method: method, principle_index: principle_index}}
+```
+
+### Documented but not config-only
+| Dataset | Status | Note |
+|---|---|---|
+| **EquityMedQA** `katielink/EquityMedQA` | ⚠️ | 11 adversarial **fairness** question sets (Google), but the files are header-less single-column question lists with **no gold** → human/rubric eval only; needs a prep step to wrap each question + attach a bias rubric. |
+| **HEx-PHI** `LLM-Tuning-Safety/HEx-PHI` | 🔒 | Harmful-instruction safety set — **gated** (custom license, manual access). |
+| **CARES (Med-VLM)** `arXiv 2406.06007` | ⚠️ | Multimodal trustworthiness (trustfulness/fairness/safety/privacy/robustness) — needs a vision model + image assets (distinct from CARES-18K). |
+| **MedSafetyBench / CSEDB / MTCMB-SE / TCM-BEST4SDT** | ✅ | Already wired (see §2 and `catalog_cn_tcm.yaml`) — the AMA-ethics safety, 安全门/有效门, 安全 fill-in, and 医学伦理/内容安全 MCQ sets. |
+| **JMedEthicBench / FairMedQA / MedRiskEval** | 📄 | Recent ethics/safety/risk benchmarks tracked for a future batch (release maturity varies). |
+
 ## Cross-cutting gotchas
 
 - **Use the labeled split:** MedMCQA → `validation`; CMB → `val`; TCMEval-SDT → `Train`.

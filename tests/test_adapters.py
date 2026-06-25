@@ -191,6 +191,106 @@ def test_local_json_attaches_image():
     assert s.messages[-1].images == ["https://x/scan.jpg"]
 
 
+def test_hf_mcq_lettered_list_options_split():
+    """MedEthicEval stores options as a stringified list ['A.爱岗敬业','B.尊重隐私',...] —
+    the adapter splits the letter prefix into A/B/C keys + clean option text, while a
+    plain list WITHOUT lettered prefixes (MMLU choices) is left untouched."""
+    ad = _mcq(answer_format="letter")
+    ad.fm["options"] = "options"
+    choices, keys = ad._resolve_options(
+        {"options": "['A.爱岗敬业', 'B.尊重隐私', 'C.人格尊严', 'D.更新知识', 'E.普及保健']"})
+    assert choices == ["爱岗敬业", "尊重隐私", "人格尊严", "更新知识", "普及保健"]
+    assert keys == ["A", "B", "C", "D", "E"]
+    # gold letter maps through the parsed keys
+    s = ad._row_to_sample({"q": "Q", "options": "['A.爱岗敬业', 'B.尊重隐私', 'C.人格尊严']", "a": "C"}, None, 0)
+    assert s.reference == {"index": 2, "letter": "C", "text": "人格尊严"}
+    # a plain list (no lettered prefix) is unaffected -> no keys
+    c2, k2 = ad._resolve_options({"options": ["Troponin", "CK-MB", "AST"]})
+    assert c2 == ["Troponin", "CK-MB", "AST"] and k2 == []
+
+
+def test_hf_mcq_tcm_humanities_inline_multi():
+    """TCM_Humanities: inline 'A.…\\nB.…' options in one 选项 column, single+multi answer."""
+    ad = HFMCQAdapter({"id": "th", "path": "x", "options_inline": True, "answer_format": "multi",
+                       "field_map": {"question": "题干", "options": "选项", "answer": "答案"}})
+    row = {"题干": "药品不良反应的特点", "答案": "BD",
+           "选项": "A.可预料\nB.与用药目的无关\nC.与剂型有关\nD.与给药途径有关\n"}
+    s = ad._row_to_sample(row, None, 0)
+    assert s.reference["indices"] == [1, 3]
+    assert ad.parse(s, "答案：B、D").parsed == [1, 3]
+
+
+def test_local_json_medethicsbench_schema():
+    """MedEthicsBench Question schema: context+stem joined as the prompt, key_points
+    rubric (criterion read from `content`, points from `weight`), reference_answer,
+    and expected_principles riding along as a reference field."""
+    rec = {
+        "question_id": "q1", "stem": "A panicked 12-year-old refuses a needed exam — right action?",
+        "context": "Emergency department, no parental consent reachable (EMTALA applies).",
+        "key_points": [
+            {"id": "kp1", "content": "A panicked minor's refusal is not a competent informed refusal.",
+             "weight": 2, "required": True, "category": "principle"},
+            {"id": "kp2", "content": "Do not delay life-saving treatment.", "weight": 1},
+        ],
+        "reference_answer": "Proceed with the necessary exam under EMTALA, minimizing harm…",
+        "expected_principles": ["nonmaleficence", "beneficence"],
+    }
+    with tempfile.TemporaryDirectory() as d:
+        fp = Path(d) / "meb.jsonl"
+        fp.write_text(json.dumps(rec), encoding="utf-8")
+        ad = LocalJSONAdapter({"id": "meb", "adapter": "local_json", "task": "open_qa",
+                               "path": str(fp),
+                               "field_map": {"prompt": ["context", "stem"], "rubric": "key_points",
+                                             "reference": "reference_answer",
+                                             "expected_principles": "expected_principles"}})
+        s = ad.load()[0]
+    assert s.messages[-1].content.startswith("Emergency")          # context joined BEFORE the stem
+    assert "right action" in s.messages[-1].content
+    rub = s.reference["rubric"]
+    assert [r["points"] for r in rub] == [2.0, 1.0]                # weight -> points
+    assert rub[0]["criterion"].startswith("A panicked minor")     # content -> criterion
+    assert s.reference["reference"].startswith("Proceed")
+    assert s.reference["expected_principles"] == ["nonmaleficence", "beneficence"]
+
+
+def test_local_json_principlism_keypoint_rubric():
+    """PrinciplismQA open-ended rubric: criterion read from the `keypoint` key."""
+    rec = {"id": 502, "question": "How to act under nonmaleficence when a minor refuses?",
+           "principles": ["autonomy", "non_maleficence"],
+           "keypoint_competencies": [
+               {"keypoint": "Refusal made in panic is not a competent refusal.", "competency": "PROFESSIONALISM"},
+               {"keypoint": "Seek a second emergency physician's evaluation.", "competency": "PATIENT CARE"}]}
+    with tempfile.TemporaryDirectory() as d:
+        fp = Path(d) / "pqa.json"
+        fp.write_text(json.dumps([rec], ensure_ascii=False), encoding="utf-8")
+        ad = LocalJSONAdapter({"id": "pqa", "adapter": "local_json", "task": "open_qa",
+                               "path": str(fp),
+                               "field_map": {"prompt": "question", "rubric": "keypoint_competencies",
+                                             "principles": "principles"}})
+        s = ad.load()[0]
+    rub = s.reference["rubric"]
+    assert len(rub) == 2 and rub[0]["criterion"].startswith("Refusal made in panic")
+    assert s.reference["principles"] == ["autonomy", "non_maleficence"]
+
+
+def test_local_json_sdt_csv_with_bom():
+    """real_clinical_cases: a BOM'd CSV loads cleanly (utf-8-sig); the sdt task maps
+    证型 -> syndrome and lets 病因病机 / 治则 ride along for syndrome_chain."""
+    csv_text = ("﻿Unnamed: 0,故事,主要症状,病因病机,中医诊断,证型,治则\n"
+                "1,\"患者咳嗽痰中带血，舌质红，脉弦细数。\",咯血,肝火亢盛灼伤肺络,咯血,咯血（肝火犯肺证）,平肝清肺\n")
+    with tempfile.TemporaryDirectory() as d:
+        fp = Path(d) / "cases.csv"
+        fp.write_text(csv_text, encoding="utf-8")
+        ad = LocalJSONAdapter({"id": "rcc", "adapter": "local_json", "task": "sdt", "path": str(fp),
+                               "field_map": {"prompt": "故事", "label": "证型",
+                                             "pathogenesis": "病因病机", "reference": "治则"}})
+        s = ad.load()[0]
+    assert s.reference["syndrome"] == "咯血（肝火犯肺证）"     # label -> syndrome (sdt task)
+    assert s.reference["pathogenesis"].startswith("肝火")     # rides along for the 证型链 metric
+    assert s.reference["reference"] == "平肝清肺"
+    assert "痰中带血" in s.messages[-1].content
+
+
 def test_agentclinic_scripted_env():
     """The scripted patient / measurement / moderator work with no LLM calls."""
     osce = {"OSCE_Examination": {

@@ -223,7 +223,7 @@ class HFMCQAdapter(DatasetAdapter):
                 choices = [str(d.get("value", d.get("text", ""))) for d in val]
                 ks = [str(d.get("key", "")) for d in val]
                 return choices, ([k.upper() for k in ks] if all(len(k) == 1 for k in ks) else [])
-            return [str(x) for x in val], []
+            return self._strip_letter_prefix(val)
         # single string that is a stringified dict/list (e.g. Med-HALT
         # "{'0': '...', '1': '...'}") -> parse and re-resolve
         sval = str(val).strip()
@@ -241,13 +241,28 @@ class HFMCQAdapter(DatasetAdapter):
                                          for k in keys) else []
                 return [str(parsed[k]) for k in keys], letterkeys
             if isinstance(parsed, (list, tuple)):
-                return [str(x) for x in parsed], []
+                return self._strip_letter_prefix(parsed)
         # single string: try inline lettered options (CMExam), else wrap
         if self.options_inline or self._looks_inline(sval):
             parsed = self._split_inline(sval)
             if len(parsed) >= 2:
                 return [t for _, t in parsed], [k for k, _ in parsed]
         return [sval], []
+
+    @staticmethod
+    def _strip_letter_prefix(items: list) -> tuple[list[str], list[str]]:
+        """Options stored as a list of lettered strings (``["A.爱岗敬业", "B.尊重隐私",
+        …]`` — e.g. MedEthicEval's stringified-list ``options``) -> split into
+        (texts, keys). Only fires when EVERY item carries a *distinct* leading
+        letter+separator; otherwise the text is returned untouched (no keys), so
+        plain option lists (MMLU ``choices``, injected [A,B,C,D]) are unaffected."""
+        pat = re.compile(r"^\s*([A-Za-z])\s*[.．、):：]\s*(\S.*)$", re.S)
+        ms = [pat.match(str(x)) for x in items]
+        if items and all(ms):
+            keys = [m.group(1).upper() for m in ms]
+            if len(set(keys)) == len(keys):       # A,B,C… not A,A,B
+                return [m.group(2).strip() for m in ms], keys
+        return [str(x) for x in items], []
 
     @staticmethod
     def _looks_inline(s: str) -> bool:

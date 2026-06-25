@@ -55,6 +55,21 @@ datasets:
     field_map: {prompt: instruction, reference: output, label: 中医疾病诊断}
     metrics: [llm_judge, syndrome_chain]
 
+  # ---- 名老中医真实医案 (real clinical cases of famous senior TCM doctors) ----
+  # TCMLM/real_clinical_cases_of_Famous_Old_TCM_Doctors — 500 真实医案. Read the case
+  # narrative (故事) and produce the structured 辨证论治: 中医诊断 / 证型 / 病机 / 治则.
+  # The CSV ships well-populated 证型 (99%), 病因病机 (99%), 治则 (99%); 方剂/西医诊断 are sparse.
+  - id: tcm_real_cases
+    adapter: local_json
+    task: sdt                     # 辨证: 证型→syndrome_chain; 病机/治则→token overlap + judge
+    format: csv
+    source_url: https://huggingface.co/datasets/TCMLM/real_clinical_cases_of_Famous_Old_TCM_Doctors/resolve/57d088e30e780ba76b651a6807e23a15fd418027/cases_old_utf8.csv
+    prompt_template: "以下是一则名老中医真实医案，请阅读后给出：①中医诊断 ②证型(辨证) ③病因病机 ④治则。\n\n【医案】\n{prompt}"
+    field_map: {prompt: 故事, label: 证型, pathogenesis: 病因病机, reference: 治则,
+                tcm_diagnosis: 中医诊断, physician: 医家}
+    split_type: validation        # real-record corpus, NOT a held-out exam: 故事 is a full medical
+    metrics: [llm_judge, syndrome_chain, rouge]   # record so 病机/治则 may appear in it — see DATASETS.md
+
   # ---- TCM-Text-Exams (ShizhenGPT) — flatten the dict-of-sections first ----
   # The HF file is a dict keyed by 5 exam sections; load_dataset("json") errors on it.
   # Flatten to an array (see DATASETS.md one-liner) then:
