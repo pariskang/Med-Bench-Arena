@@ -158,6 +158,9 @@ class Runner:
         self.num_shards = max(1, int(run.get("num_shards", 1) or 1))
         self.shard_index = int(run.get("shard_index", 0) or 0)
         self.sharded = self.num_shards > 1
+        # When sweeping many datasets in one process (one model load), keep going if
+        # a single dataset fails to load or eval (gated, offline, needs a server).
+        self.continue_on_error = bool(run.get("continue_on_error", False))
         self.shard_suffix = f"__shard{self.shard_index}of{self.num_shards}" if self.sharded else ""
         self.eval_cfg = config.get("eval", {})
         self.gen_defaults: dict[str, Any] = dict(
@@ -325,8 +328,17 @@ class Runner:
     # --- entry points -----------------------------------------------------
     async def arun(self) -> list[dict[str, Any]]:
         leaderboard: list[dict[str, Any]] = []
+        failures: list[str] = []
         for ds in self.datasets:
-            samples = ds.load()
+            try:
+                samples = ds.load()
+            except Exception as e:  # dataset failed to load (gated / offline / moved)
+                if not self.continue_on_error:
+                    raise
+                msg = f"{ds.id}: load failed — {type(e).__name__}: {e}"
+                print(f"[medeval] SKIP {msg}")
+                failures.append(msg)
+                continue
             if self.sharded:
                 samples = samples[self.shard_index::self.num_shards]  # strided shard
             if not samples:
@@ -337,11 +349,23 @@ class Runner:
                     continue
                 tag = f" [shard {self.shard_index}/{self.num_shards}]" if self.sharded else ""
                 print(f"[medeval] {prov.id} × {ds.id}  ({len(samples)} samples){tag}")
-                row = await self._eval(prov, ds, samples)
+                try:
+                    row = await self._eval(prov, ds, samples)
+                except Exception as e:  # eval/score failed for this (model, dataset)
+                    if not self.continue_on_error:
+                        raise
+                    msg = f"{prov.id} × {ds.id}: eval failed — {type(e).__name__}: {e}"
+                    print(f"[medeval] SKIP {msg}")
+                    failures.append(msg)
+                    continue
                 leaderboard.append(row)
                 key, val = headline(row["metrics"])
                 print(f"           -> {key}={val:.4f}")
         self._write_leaderboard(leaderboard)
+        if failures:
+            print(f"[medeval] {len(failures)} dataset(s) skipped:")
+            for m in failures:
+                print(f"           - {m}")
         for prov in self.providers.values():
             await prov.aclose()
         if self.sharded:
