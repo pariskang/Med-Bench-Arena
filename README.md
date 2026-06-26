@@ -49,7 +49,7 @@ python -m medeval run configs/example_smoke.yaml
 
 ## 📑 Table of contents
 
-[Why](#-why) · [Architecture](#-architecture) · [Install](#-install) · [Quick start](#-quick-start) · [Reliability](#-reliability--reproducibility) · [Benchmarks](#-benchmark-catalog) · [Backends](#-backends) · [Metrics](#-metrics--judge) · [Agents](#-agents) · [Multimodal](#-multimodal-舌象--影像) · [TCM](#-traditional-chinese-medicine-中医) · [Distributed](#-distributed-scheduling) · [Submission](#-leaderboard-submission) · [Extending](#-extending) · [Layout](#-project-layout) · [Citation](#-citation) · [Contributing](#-contributing) · [License](#-license)
+[Why](#-why) · [Architecture](#-architecture) · [Install](#-install) · [Quick start](#-quick-start) · [Reliability](#-reliability--reproducibility) · [Benchmarks](#-benchmark-catalog) · [Backends](#-backends) · [Models](#-model-catalog-medical--tcm) · [Metrics](#-metrics--judge) · [Agents](#-agents) · [Multimodal](#-multimodal-舌象--影像) · [TCM](#-traditional-chinese-medicine-中医) · [Distributed](#-distributed-scheduling) · [Submission](#-leaderboard-submission) · [Extending](#-extending) · [Layout](#-project-layout) · [Citation](#-citation) · [Contributing](#-contributing) · [License](#-license)
 
 ---
 
@@ -201,16 +201,27 @@ A representative slice (all wired & verified against live sources; **30+** docum
 
 **Mode A** (default): each backend in-process — HF offline batch, Poe/LiteLLM via API. **Mode B** (production): serve HF with `vllm serve`, route everything through LiteLLM for one retry/cache/cost/limit layer.
 
-### 🤖 Built-in medical / TCM model catalog
+---
 
-[`configs/catalog_med_models.yaml`](configs/catalog_med_models.yaml) wires **18 medical & TCM LLMs** as ready-to-run HF/vLLM backends — every repo id, base architecture, `dtype`, context length and `trust_remote_code` flag **verified against the live HuggingFace page** (see [`MODELS.md`](MODELS.md) for the full table). Select one per run (vLLM keeps a model resident in GPU memory):
+## 🤖 Model catalog (medical & TCM)
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
+
+[`configs/catalog_med_models.yaml`](configs/catalog_med_models.yaml) wires **18 medical & TCM LLMs** as ready-to-run HF/vLLM backends — every repo id, base architecture, `dtype`, context length and `trust_remote_code` flag **verified against the live HuggingFace page** (full table + per-model notes in [`MODELS.md`](MODELS.md)). Pick one per run (vLLM holds a model in GPU memory) with `--models`:
 
 ```bash
 python -m medeval run configs/catalog_med_models.yaml --models zhongjing-2-1_8b --limit 20
-python -m medeval run configs/catalog_med_models.yaml --models biancang --limit 20
+python -m medeval run configs/catalog_med_models.yaml --models biancang        --limit 20
 ```
 
-Covered: **ZhongJing-2 · Dao1-30B-A3B · BianCang · Taiyi · DISC-MedLLM** (TCM/CN) · **HuatuoGPT-II · HuatuoGPT-o1 · AquilaMed · Baichuan-M1/M2 · ClinicalGPT-R1** (CN medical) · **Meditron-70B · BioMistral · DeepSeek-R1-32B · MedGemma-27B · Citrus** (intl) · **Lingshu** (multimodal). Quirks handled: ZhongJing-2 is a LoRA (applied on `Qwen1.5-1.8B-Chat`); Baichuan/Taiyi/DISC/AquilaMed need `trust_remote_code`; Meditron/MedGemma are gated; reasoning models get a larger `max_tokens`.
+| Group | Models (`--models <id>`) |
+|---|---|
+| 🀄 **TCM 中医** | `zhongjing-2-1_8b` · `dao1-30b-a3b` · `biancang` · `taiyi` · `disc-medllm` |
+| 🩺 **Chinese medical** | `huatuogpt2-7b` · `huatuogpt-o1-7b` · `aquilamed-rl` · `baichuan-m1-14b` · `baichuan-m2-32b` · `clinicalgpt-r1` |
+| ⚕️ **English / international** | `meditron-70b` · `biomistral-7b` · `deepseek-r1-32b` · `medgemma-27b-it` · `citrus-70b` |
+| 🖼 **Multimodal** | `lingshu-7b` (+ `medgemma-27b-it`) |
+
+Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baichuan / Taiyi / DISC / AquilaMed** need `trust_remote_code`; **Meditron / MedGemma** are gated (accept the license + `huggingface-cli login`); reasoning models (**DeepSeek-R1 / HuatuoGPT-o1 / Baichuan-M2 / ClinicalGPT-R1**) get a larger `max_tokens`; and a vLLM load failure falls back to transformers instead of crashing. *(Qibo and the Qilin-Med text model aren't publicly on HF — documented in [`MODELS.md`](MODELS.md).)*
 
 ▶️ **One-click GPU run** — open the notebook straight in Google Colab (no local setup; clone · install vLLM · pick a model · score it on MedQA + CMB):
 
