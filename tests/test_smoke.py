@@ -132,6 +132,30 @@ def test_cli_models_filter():
     assert main(["run", str(ROOT / "configs/example_smoke.yaml"), "--models", "nope"]) == 2
 
 
+def test_continue_on_error_skips_bad_dataset():
+    """run.continue_on_error keeps the sweep alive when one dataset fails to load,
+    still scoring the good ones and writing a leaderboard (the Colab full-sweep)."""
+    out = ROOT / "results/coe_test"
+    cfg = {
+        "run": {"output_dir": str(out), "cache": False, "continue_on_error": True},
+        "eval": {"gen": {"temperature": 0.0, "max_tokens": 64}, "judge_model": "mock-judge"},
+        "models": [{"id": "mock-model", "type": "mock", "behavior": "auto"},
+                   {"id": "mock-judge", "type": "mock", "behavior": "auto", "judge_only": True}],
+        "datasets": [
+            {"id": "good_qa", "adapter": "local_json", "task": "open_qa",
+             "path": "data/samples/demo_open_qa.jsonl",
+             "field_map": {"prompt": "question", "rubric": "rubric", "reference": "reference"},
+             "metrics": ["llm_judge"]},
+            {"id": "bad_ds", "adapter": "local_json", "task": "open_qa",
+             "path": "/no/such/file.jsonl",
+             "field_map": {"prompt": "q", "reference": "r"}, "metrics": ["llm_judge"]},
+        ],
+    }
+    rows = medeval.run_config(cfg)
+    assert [r["dataset"] for r in rows] == ["good_qa"]
+    assert (out / "leaderboard.md").exists()
+
+
 def test_end_to_end_smoke():
     cfg = yaml.safe_load((ROOT / "configs/example_smoke.yaml").read_text())
     cfg["run"]["output_dir"] = str(ROOT / "results/smoke_test")
@@ -157,5 +181,6 @@ if __name__ == "__main__":
     test_med_models_catalog_wellformed()
     test_hf_per_model_gen_and_system_prompt()
     test_cli_models_filter()
+    test_continue_on_error_skips_bad_dataset()
     test_end_to_end_smoke()
     print("OK: all smoke tests passed")
