@@ -50,6 +50,13 @@ class ModelProvider(abc.ABC):
         # Backend-side concurrency ceiling for the default fan-out.
         self.concurrency: int = int(config.get("concurrency", 16))
         self.judge_only: bool = bool(config.get("judge_only", False))
+        # Per-model generation overrides: merged on top of the run's eval.gen so a
+        # single model can carry its authors' recommended sampling (e.g. a reasoning
+        # model's temperature) without changing the run default for every other model.
+        self.gen_overrides: dict[str, Any] = dict(config.get("gen", {}))
+
+    def _merge_gen(self, gen: dict[str, Any]) -> dict[str, Any]:
+        return {**gen, **self.gen_overrides} if self.gen_overrides else gen
 
     @abc.abstractmethod
     async def agenerate(self, messages: list[Message], **gen: Any) -> Generation:
@@ -63,6 +70,7 @@ class ModelProvider(abc.ABC):
         API backends keep this. The HF backend overrides it to feed the whole
         batch to vLLM at once (the single biggest perf lever vs. APIs).
         """
+        gen = self._merge_gen(gen)
         sem = asyncio.Semaphore(self.concurrency)
 
         async def one(msgs: list[Message]) -> Generation:

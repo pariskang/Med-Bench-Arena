@@ -33,7 +33,7 @@ python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
 | `disc-medllm` | `Flmc/DISC-MedLLM` | Baichuan-13B-Base | 13B | – | ✅ | fp16 | 4096 | – |
 | `baichuan-m1-14b` | `baichuan-inc/Baichuan-M1-14B-Instruct` | Baichuan-M1 (scratch) | 14B | – | ✅ | bf16 | 32768 | – |
 | `baichuan-m2-32b` | `baichuan-inc/Baichuan-M2-32B` | Qwen2.5-32B | 32B | – | – | bf16 | 128K | – |
-| `dao1-30b-a3b` | `CMLM/Dao1-30b-a3b` | Qwen3-30B-A3B (MoE) | 30B/3B act. | – | – | bf16 | 40960 | – |
+| `dao1-30b-a3b` | `CMLM/Dao1-30b-a3b` | Qwen3-30B-A3B (MoE) | 30B/3B act. | – | ✅ | fp16 | 40960 | – |
 | `biancang` | `QLU-NLP/BianCang-Qwen2.5-7B-Instruct` | Qwen2.5-7B | 7B | – | – | bf16 | 32768 | – |
 | `taiyi` | `DUTIR-BioNLP/Taiyi-LLM` | Qwen-1 7B | 7.7B | – | ✅ | bf16 | 8192 | – |
 | `citrus-70b` | `jdh-algo/Citrus1.0-llama-70B` | LLaMA-3.1-70B | 70B | – | – | bf16 | 128K | – |
@@ -80,8 +80,13 @@ python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
   needed despite the card example). Apache-2.0, 128K ctx. vLLM ≥ 0.9: `--reasoning-parser qwen3`.
 
 ### Traditional Chinese Medicine (中医)
-- **Dao1-30b-a3b** — CMLM, **Qwen3-30B-A3B MoE** (128 experts, ~3B active/token). Native vLLM
-  (no `trust_remote_code` despite the README), bf16, ChatML, ctx 40960. Research / non-clinical only.
+- **Dao1-30b-a3b** — CMLM, **Qwen3-30B-A3B MoE** (128 experts, ~3B active/token), ChatML, ctx 40960.
+  vLLM pre-allocates a large KV cache and **OOMs this 30B on most GPUs**, so the Dao series defaults
+  to the **transformers backend** (`backend: transformers`, `device_map=auto` which can offload,
+  `dtype: float16`, `attn_implementation: eager`) with Dao's recommended sampling
+  (`temperature 0.7 / top_p 0.9 / repetition_penalty 1.1`) and the **小道 / Tao** system prompt — all
+  carried on the model entry (`system_prompt`, `gen`). On a big GPU switch to `backend: vllm` (bf16,
+  drop `attn_implementation`) for speed. Research / non-clinical only.
 - **BianCang (扁仓)** — QLU-NLP, Qwen2.5 (arXiv:2411.11027). Prefer the **-Instruct** variants;
   7B and 14B available. Standard Qwen2 → native vLLM, ChatML.
 - **Taiyi (太一)** — DUTIR-BioNLP, **original Qwen-1 7B** (`QWenLMHeadModel`, custom code) →

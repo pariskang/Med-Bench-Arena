@@ -101,6 +101,24 @@ def test_med_models_catalog_wellformed():
     assert zj["lora"] == "CMLM/ZhongJing-2-1_8b" and "Qwen" in zj["model"]
 
 
+def test_hf_per_model_gen_and_system_prompt():
+    """A model entry can carry `gen` overrides + a `system_prompt`; the Dao entry
+    uses the transformers backend with eager attention. No model is loaded."""
+    from medeval.providers.hf import HFProvider
+    cfg = yaml.safe_load((ROOT / "configs/catalog_med_models.yaml").read_text(encoding="utf-8"))
+    dao = next(m for m in cfg["models"] if m["id"] == "dao1-30b-a3b")
+    assert dao["backend"] == "transformers" and dao["attn_implementation"] == "eager"
+    p = HFProvider(dao)                       # lazy: no engine/torch needed
+    merged = p._merge_gen({"temperature": 0.0, "max_tokens": 2048})
+    assert merged["temperature"] == 0.7 and merged["repetition_penalty"] == 1.1
+    chat = p._to_chat([Message("user", "问题")])
+    assert chat[0]["role"] == "system" and "小道" in chat[0]["content"]
+    # a plain entry (no gen/system_prompt) is unchanged
+    plain = HFProvider(next(m for m in cfg["models"] if m["id"] == "biancang"))
+    assert plain._merge_gen({"temperature": 0.0}) == {"temperature": 0.0}
+    assert plain._to_chat([Message("user", "x")])[0]["role"] == "user"
+
+
 def test_cli_models_filter():
     """`medeval run --models <id>` keeps only that model + judge_only models."""
     from medeval.cli import main
@@ -137,6 +155,7 @@ if __name__ == "__main__":
     test_llm_judge_default_rubric_runs()
     test_catalog_configs_valid()
     test_med_models_catalog_wellformed()
+    test_hf_per_model_gen_and_system_prompt()
     test_cli_models_filter()
     test_end_to_end_smoke()
     print("OK: all smoke tests passed")
