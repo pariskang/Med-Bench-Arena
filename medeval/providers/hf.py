@@ -37,6 +37,8 @@ class HFProvider(ModelProvider):
       lora:             optional path/repo of a LoRA adapter
       backend:          vllm | transformers | auto (default auto)
       gpu_memory_utilization: vLLM knob (default 0.9)
+      trust_remote_code: load custom modeling code (Baichuan/Taiyi/… need this)
+      revision:         pin a specific commit/branch of the HF repo
     """
 
     def __init__(self, config: dict[str, Any]):
@@ -48,6 +50,8 @@ class HFProvider(ModelProvider):
         self.lora: str | None = config.get("lora")
         self.backend: str = config.get("backend", "auto")
         self.gpu_mem: float = float(config.get("gpu_memory_utilization", 0.9))
+        self.trust_remote_code: bool = bool(config.get("trust_remote_code", False))
+        self.revision: str | None = config.get("revision")
         self._engine = None
         self._tokenizer = None
         self._lora_request = None
@@ -63,7 +67,18 @@ class HFProvider(ModelProvider):
                 return
             except ImportError:
                 if self.backend == "vllm":
-                    raise
+                    raise  # user explicitly asked for vLLM but it isn't installed
+                # vLLM absent -> fall through to transformers
+            except Exception as e:
+                if self.backend == "vllm":
+                    raise  # explicit vllm: surface the real error, don't mask it
+                # auto: a model vLLM can't load (unsupported arch like AquilaMed's
+                # `aquila3`, a too-new custom type, an OOM) shouldn't crash the run —
+                # degrade to the transformers backend instead.
+                import sys
+                print(f"[medeval] vLLM could not load {self.model!r} "
+                      f"({type(e).__name__}: {e}); falling back to transformers.",
+                      file=sys.stderr)
         self._init_transformers()
 
     def _init_vllm(self) -> None:
@@ -77,11 +92,15 @@ class HFProvider(ModelProvider):
             "dtype": self.dtype,
             "gpu_memory_utilization": self.gpu_mem,
             "enable_lora": bool(self.lora),
+            "trust_remote_code": self.trust_remote_code,
         }
         if self.max_model_len:
             kwargs["max_model_len"] = self.max_model_len
+        if self.revision:
+            kwargs["revision"] = self.revision
         self._engine = LLM(**kwargs)
-        self._tokenizer = AutoTokenizer.from_pretrained(self.model)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.model, trust_remote_code=self.trust_remote_code, revision=self.revision)
         if self.lora:
             self._lora_request = LoRARequest("adapter", 1, self.lora)
         self._mode = "vllm"
@@ -90,12 +109,14 @@ class HFProvider(ModelProvider):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        self._tokenizer = AutoTokenizer.from_pretrained(self.model)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.model, trust_remote_code=self.trust_remote_code, revision=self.revision)
         dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16}.get(
             self.dtype, "auto"
         )
         model = AutoModelForCausalLM.from_pretrained(
-            self.model, torch_dtype=dtype, device_map="auto"
+            self.model, torch_dtype=dtype, device_map="auto",
+            trust_remote_code=self.trust_remote_code, revision=self.revision,
         )
         if self.lora:
             from peft import PeftModel
