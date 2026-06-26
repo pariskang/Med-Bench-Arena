@@ -125,11 +125,22 @@ models:
   # 🀄  TRADITIONAL CHINESE MEDICINE (中医) LLMs
   # ===========================================================================
 
-  # Dao1-30b-a3b — CMLM, Qwen3-30B-A3B MoE (128 experts, ~3B active/token). bf16,
-  # ChatML, ctx 40960. Native vLLM (no trust_remote_code despite README). Research/
-  # non-clinical use only. ~60GB bf16 (1×80GB ok).
-  - {id: dao1-30b-a3b, type: hf, model: CMLM/Dao1-30b-a3b, dtype: bfloat16,
-     max_model_len: 32768}
+  # Dao1-30b-a3b — CMLM, Qwen3-30B-A3B MoE (128 experts, ~3B active/token), ChatML,
+  # ctx 40960. vLLM pre-allocates a large KV cache and OOMs this 30B on most GPUs, so
+  # the Dao series runs via the **transformers** backend with device_map=auto (which
+  # can offload to CPU/disk), float16 + eager attention, plus Dao's recommended
+  # sampling and the 小道/Tao system prompt. On a big GPU switch to backend: vllm
+  # (dtype bf16, drop attn_implementation) for speed. Research / non-clinical use only.
+  - id: dao1-30b-a3b
+    type: hf
+    model: CMLM/Dao1-30b-a3b
+    backend: transformers
+    dtype: float16
+    trust_remote_code: true
+    attn_implementation: eager
+    max_model_len: 32768
+    system_prompt: "你是小道（英文名 Tao），由医哲未来人工智能研究院自主研发的专业中医知识助手。请基于中医理论，以专业、准确、条理清晰的方式回答问题。"
+    gen: {temperature: 0.7, top_p: 0.9, repetition_penalty: 1.1, max_tokens: 2048}
 
   # BianCang (扁仓) — QLU-NLP, Qwen2.5. Prefer the -Instruct variants. Standard
   # Qwen2 -> native vLLM, ChatML. ctx 32768.

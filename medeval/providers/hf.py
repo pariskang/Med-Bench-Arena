@@ -39,6 +39,9 @@ class HFProvider(ModelProvider):
       gpu_memory_utilization: vLLM knob (default 0.9)
       trust_remote_code: load custom modeling code (Baichuan/Taiyi/… need this)
       revision:         pin a specific commit/branch of the HF repo
+      attn_implementation: transformers attention impl, e.g. ``eager`` (lower memory)
+      system_prompt:    default system turn prepended when the sample has none
+      gen:              per-model generation overrides (temperature/top_p/…)
     """
 
     def __init__(self, config: dict[str, Any]):
@@ -52,6 +55,8 @@ class HFProvider(ModelProvider):
         self.gpu_mem: float = float(config.get("gpu_memory_utilization", 0.9))
         self.trust_remote_code: bool = bool(config.get("trust_remote_code", False))
         self.revision: str | None = config.get("revision")
+        self.attn_implementation: str | None = config.get("attn_implementation")
+        self.system_prompt: str | None = config.get("system_prompt")
         self._engine = None
         self._tokenizer = None
         self._lora_request = None
@@ -114,10 +119,13 @@ class HFProvider(ModelProvider):
         dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16}.get(
             self.dtype, "auto"
         )
-        model = AutoModelForCausalLM.from_pretrained(
-            self.model, torch_dtype=dtype, device_map="auto",
+        mkw: dict[str, Any] = dict(
+            torch_dtype=dtype, device_map="auto",
             trust_remote_code=self.trust_remote_code, revision=self.revision,
         )
+        if self.attn_implementation:
+            mkw["attn_implementation"] = self.attn_implementation
+        model = AutoModelForCausalLM.from_pretrained(self.model, **mkw)
         if self.lora:
             from peft import PeftModel
             model = PeftModel.from_pretrained(model, self.lora)
@@ -130,10 +138,19 @@ class HFProvider(ModelProvider):
         return SamplingParams(
             temperature=gen.get("temperature", 0.0),
             top_p=gen.get("top_p", 1.0),
+            repetition_penalty=gen.get("repetition_penalty", 1.0),
             max_tokens=gen.get("max_tokens", 1024),
             stop=gen.get("stop"),
             seed=gen.get("seed"),
         )
+
+    def _to_chat(self, msgs: list[Message]) -> list[dict[str, str]]:
+        """OpenAI-style messages, prepending the model's default system turn if the
+        sample doesn't already supply one."""
+        oa = [m.to_openai() for m in msgs]
+        if self.system_prompt and not (oa and oa[0].get("role") == "system"):
+            oa = [{"role": "system", "content": self.system_prompt}, *oa]
+        return oa
 
     async def agenerate(self, messages: list[Message], **gen: Any) -> Generation:
         out = await self.agenerate_many([messages], **gen)
@@ -149,8 +166,9 @@ class HFProvider(ModelProvider):
         self, batch: list[list[Message]], gen: dict[str, Any]
     ) -> list[Generation]:
         self._ensure_engine()
+        gen = self._merge_gen(gen)   # per-model overrides on top of run defaults
         prompts = [
-            _chat_to_text(self._tokenizer, [m.to_openai() for m in msgs])
+            _chat_to_text(self._tokenizer, self._to_chat(msgs))
             for msgs in batch
         ]
         t0 = now()
@@ -185,6 +203,8 @@ class HFProvider(ModelProvider):
                     do_sample=gen.get("temperature", 0.0) > 0,
                     temperature=max(gen.get("temperature", 0.0), 1e-5),
                     top_p=gen.get("top_p", 1.0),
+                    repetition_penalty=gen.get("repetition_penalty", 1.0),
+                    use_cache=True,
                 )
             gen_ids = out[0][inputs["input_ids"].shape[1]:]
             text = self._tokenizer.decode(gen_ids, skip_special_tokens=True)
