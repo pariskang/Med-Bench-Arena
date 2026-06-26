@@ -66,8 +66,10 @@ python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
   harness applies a `ROLE: …` fallback prompt.
 - **HuatuoGPT-o1** — reasoning models; 7B/72B = Qwen2.5 (bilingual), 8B/70B = LLaMA-3.1 (EN).
   Standard archs + chat templates. Emits `## Thinking … ## Final Response …`. Apache-2.0.
-- **AquilaMed-RL** — BAAI, Aquila3 (~8B, LLaMA-compatible via `auto_map`). **`trust_remote_code:
-  true`**, ChatML prompts, **short 4096 ctx**. BAAI Aquila licence (review terms; not click-gated).
+- **AquilaMed-RL** — BAAI. config: `architectures=["AquilaForCausalLM"]`, `model_type="aquila3"`,
+  `auto_map`→Llama. **`trust_remote_code: true`** required. vLLM matches on the arch string; if a
+  given vLLM build can't load `aquila3`, the `auto` backend now **auto-falls-back to transformers**
+  (or set `backend: transformers`). ChatML prompts, **short 4096 ctx**. BAAI Aquila licence.
   Note: `BAAI/AquilaMed-Instruct` is a *dataset*, not a model.
 - **DISC-MedLLM** — Fudan, Baichuan-13B-Base. **`trust_remote_code: true`**, **dtype float16**,
   Baichuan user/assistant token format, ctx 4096.

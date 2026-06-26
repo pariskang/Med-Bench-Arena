@@ -67,7 +67,18 @@ class HFProvider(ModelProvider):
                 return
             except ImportError:
                 if self.backend == "vllm":
-                    raise
+                    raise  # user explicitly asked for vLLM but it isn't installed
+                # vLLM absent -> fall through to transformers
+            except Exception as e:
+                if self.backend == "vllm":
+                    raise  # explicit vllm: surface the real error, don't mask it
+                # auto: a model vLLM can't load (unsupported arch like AquilaMed's
+                # `aquila3`, a too-new custom type, an OOM) shouldn't crash the run —
+                # degrade to the transformers backend instead.
+                import sys
+                print(f"[medeval] vLLM could not load {self.model!r} "
+                      f"({type(e).__name__}: {e}); falling back to transformers.",
+                      file=sys.stderr)
         self._init_transformers()
 
     def _init_vllm(self) -> None:

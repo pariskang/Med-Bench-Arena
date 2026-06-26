@@ -95,8 +95,11 @@ models:
   # - {id: huatuogpt-o1-72b, type: hf, model: FreedomIntelligence/HuatuoGPT-o1-72B,
   #    dtype: bfloat16, max_model_len: 32768, tensor_parallel: 2}
 
-  # AquilaMed-RL — BAAI, Aquila3 (~8B, Llama-compatible). trust_remote_code=True
-  # (custom auto_map). ChatML prompts. BAAI Aquila licence. Short ctx 4096.
+  # AquilaMed-RL — BAAI. config.json: architectures=["AquilaForCausalLM"],
+  # model_type="aquila3", auto_map -> Llama. trust_remote_code=True required (custom
+  # config). vLLM keys on the arch string; if your vLLM build rejects aquila3 the
+  # `auto` backend auto-falls-back to transformers (set backend: transformers to
+  # force it). ChatML prompts. BAAI Aquila licence. Short ctx 4096.
   - {id: aquilamed-rl, type: hf, model: BAAI/AquilaMed-RL, dtype: bfloat16,
      max_model_len: 4096, trust_remote_code: true}
 
@@ -156,7 +159,10 @@ models:
   # ===========================================================================
   # 🖼  MULTIMODAL MEDICAL LLMs (vision-language)
   #     Wired here as text backends for the MCQ slice; for image benchmarks use
-  #     configs/catalog_multimodal.yaml. Both need trust_remote_code=True.
+  #     configs/catalog_multimodal.yaml. NOTE: these are *ForConditionalGeneration
+  #     models — run them on vLLM (the default). The transformers fallback uses
+  #     AutoModelForCausalLM and will NOT load a VL model, so do not force
+  #     backend: transformers here. trust_remote_code=True.
   # ===========================================================================
 
   # Lingshu (灵枢) — Qwen2.5-VL based medical MLLM (12+ imaging modalities). MIT.
