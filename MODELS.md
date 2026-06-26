@@ -21,6 +21,7 @@ python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
 
 | id (`--models`) | HF repo | Base arch | Params | Gated | `trust_remote_code` | dtype | ctx | Multimodal |
 |---|---|---|---|:--:|:--:|:--:|--:|:--:|
+| `zhongjing-2-1_8b` | `CMLM/ZhongJing-2-1_8b` (LoRA) | Qwen1.5-1.8B-Chat | 1.8B | – | – | bf16 | 32768 | – |
 | `meditron-70b` | `epfl-llm/meditron-70b` | LLaMA-2-70B | 70B | ✅ | – | bf16 | 4096 | – |
 | `biomistral-7b` | `BioMistral/BioMistral-7B` | Mistral-7B | 7B | – | – | fp16 | 2048 | – |
 | `deepseek-r1-32b` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B` | Qwen2.5-32B | 32B | – | – | bf16 | 32768 | – |
@@ -35,7 +36,6 @@ python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
 | `dao1-30b-a3b` | `CMLM/Dao1-30b-a3b` | Qwen3-30B-A3B (MoE) | 30B/3B act. | – | – | bf16 | 40960 | – |
 | `biancang` | `QLU-NLP/BianCang-Qwen2.5-7B-Instruct` | Qwen2.5-7B | 7B | – | – | bf16 | 32768 | – |
 | `taiyi` | `DUTIR-BioNLP/Taiyi-LLM` | Qwen-1 7B | 7.7B | – | ✅ | bf16 | 8192 | – |
-| `zhongjing-2-1_8b` | `CMLM/ZhongJing-2-1_8b` (LoRA) | Qwen1.5-1.8B-Chat | 1.8B | – | – | bf16 | 32768 | – |
 | `citrus-70b` | `jdh-algo/Citrus1.0-llama-70B` | LLaMA-3.1-70B | 70B | – | – | bf16 | 128K | – |
 | `lingshu-7b` | `lingshu-medical-mllm/Lingshu-7B` | Qwen2.5-VL-7B | 7B | – | ✅ | bf16 | ~32K | ✅ |
 

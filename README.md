@@ -205,11 +205,11 @@ A representative slice (all wired & verified against live sources; **30+** docum
 [`configs/catalog_med_models.yaml`](configs/catalog_med_models.yaml) wires **18 medical & TCM LLMs** as ready-to-run HF/vLLM backends — every repo id, base architecture, `dtype`, context length and `trust_remote_code` flag **verified against the live HuggingFace page** (see [`MODELS.md`](MODELS.md) for the full table). Select one per run (vLLM keeps a model resident in GPU memory):
 
 ```bash
+python -m medeval run configs/catalog_med_models.yaml --models zhongjing-2-1_8b --limit 20
 python -m medeval run configs/catalog_med_models.yaml --models biancang --limit 20
-python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
 ```
 
-Covered: **Dao1-30B-A3B · BianCang · Taiyi · ZhongJing-2 · DISC-MedLLM** (TCM/CN) · **HuatuoGPT-II · HuatuoGPT-o1 · AquilaMed · Baichuan-M1/M2 · ClinicalGPT-R1** (CN medical) · **Meditron-70B · BioMistral · DeepSeek-R1-32B · MedGemma-27B · Citrus** (intl) · **Lingshu** (multimodal). Quirks handled: Baichuan/Taiyi/DISC/AquilaMed need `trust_remote_code`; ZhongJing-2 is a LoRA (applied on `Qwen1.5-1.8B-Chat`); Meditron/MedGemma are gated; reasoning models get a larger `max_tokens`.
+Covered: **ZhongJing-2 · Dao1-30B-A3B · BianCang · Taiyi · DISC-MedLLM** (TCM/CN) · **HuatuoGPT-II · HuatuoGPT-o1 · AquilaMed · Baichuan-M1/M2 · ClinicalGPT-R1** (CN medical) · **Meditron-70B · BioMistral · DeepSeek-R1-32B · MedGemma-27B · Citrus** (intl) · **Lingshu** (multimodal). Quirks handled: ZhongJing-2 is a LoRA (applied on `Qwen1.5-1.8B-Chat`); Baichuan/Taiyi/DISC/AquilaMed need `trust_remote_code`; Meditron/MedGemma are gated; reasoning models get a larger `max_tokens`.
 
 ▶️ **One-click GPU run**: [`notebooks/Med_Bench_Arena_Colab.ipynb`](notebooks/Med_Bench_Arena_Colab.ipynb) — clone · install vLLM · pick a model · score it on MedQA + CMB.
 
