@@ -20,6 +20,15 @@ def _load_config(path: str) -> dict[str, Any]:
 
 def cmd_run(args: argparse.Namespace) -> int:
     cfg = _load_config(args.config)
+    if args.models:
+        wanted = {m.strip() for m in args.models.split(",") if m.strip()}
+        kept = [m for m in cfg.get("models", [])
+                if m.get("id") in wanted or m.get("judge_only")]
+        missing = wanted - {m.get("id") for m in kept}
+        if missing:
+            print(f"[medeval] --models: no such model id(s): {sorted(missing)}")
+            return 2
+        cfg["models"] = kept
     if args.limit is not None:
         for d in cfg.get("datasets", []):
             d["limit"] = args.limit
@@ -182,6 +191,9 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("config", help="path to the YAML run spec")
     p_run.add_argument("--limit", type=int, default=None,
                        help="cap samples per dataset (overrides config)")
+    p_run.add_argument("--models", default=None,
+                       help="comma-separated model ids to keep (judges always kept); "
+                            "select one HF model per run since vLLM holds it in GPU memory")
     p_run.add_argument("--output", default=None, help="override run.output_dir")
     p_run.add_argument("--no-cache", action="store_true", help="disable generation cache")
     p_run.add_argument("--num-shards", type=int, default=1,

@@ -1,0 +1,200 @@
+# =============================================================================
+# Catalog: medical & TCM LLMs as ready-to-run HF/vLLM backends.
+# Every repo id + architecture + key parameter below was researched and VERIFIED
+# against the live HuggingFace model page (2026-06). See MODELS.md for the full
+# per-model table (base model, size, license/gating, prompt quirks, GPU notes).
+#
+# HOW TO RUN  — one HF model per process (vLLM keeps a model resident in GPU
+# memory, so you cannot load 19 of them at once). Select with `--models`:
+#
+#     python -m medeval run configs/catalog_med_models.yaml --models biancang --limit 20
+#     python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
+#
+# The judge (`mock-judge` here, or a real one) is always kept automatically.
+# With NO `--models` filter this would try to load EVERY model -> OOM; always
+# pass `--models <id>`. For a one-click GPU run see notebooks/ (Colab).
+#
+# DTYPE / CONTEXT / trust_remote_code are set per the verified config.json of each
+# repo. gpu_memory_utilization defaults to 0.9; lower it (0.80) if you OOM on load.
+# =============================================================================
+run:
+  output_dir: ./results/med_models
+  concurrency: 16
+  cache: true
+
+eval:
+  # 2048 max_tokens leaves room for the reasoning models' <think> blocks
+  # (HuatuoGPT-o1, DeepSeek-R1, ClinicalGPT-R1, Baichuan-M2). MCQ scoring is
+  # greedy (temperature 0) for reproducibility; see per-model notes in MODELS.md
+  # for the authors' recommended sampling (e.g. DeepSeek-R1 -> temp ~0.6).
+  gen: {temperature: 0.0, max_tokens: 2048}
+  judge_model: mock-judge          # real open-ended judge: deepseek-r1 (below)
+
+models:
+  # ---- always-available offline stand-ins (keep the file runnable / preflightable)
+  - {id: mock-model, type: mock, behavior: auto}
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+  # Recommended real judge for the open-ended/safety datasets (uncomment + key):
+  # - {id: deepseek-r1, type: litellm, model: deepseek/deepseek-reasoner,
+  #    api_key_env: DEEPSEEK_API_KEY, judge_only: true}
+
+  # ===========================================================================
+  # ⚕️  ENGLISH / INTERNATIONAL MEDICAL LLMs
+  # ===========================================================================
+
+  # Meditron-70B — EPFL, LLaMA-2-70B continued-pretrain. GATED (accept Llama-2
+  # license + `huggingface-cli login`). Base model: NO chat template -> few-shot.
+  # ~140GB bf16: needs ≥2×80GB (tensor_parallel: 2) or 4-bit. ctx 4096.
+  - {id: meditron-70b, type: hf, model: epfl-llm/meditron-70b, dtype: bfloat16,
+     tensor_parallel: 2, max_model_len: 4096, gpu_memory_utilization: 0.90}
+
+  # BioMistral-7B — continued-pretrain of Mistral-7B-Instruct-v0.1. Apache-2.0.
+  # Short 2048 sliding-window context. Research-only.
+  - {id: biomistral-7b, type: hf, model: BioMistral/BioMistral-7B, dtype: float16,
+     max_model_len: 2048}
+
+  # DeepSeek-R1-Distill-Qwen-32B — reasoning model (Qwen2.5-32B). MIT. ~65GB bf16
+  # (1×80GB ok, or tensor_parallel: 2). Authors: no system prompt, temp ~0.6,
+  # start with "<think>\n". ctx 32768.
+  - {id: deepseek-r1-32b, type: hf, model: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B,
+     dtype: bfloat16, max_model_len: 32768}
+
+  # MedGemma-27B-it — Google, Gemma-3-27B + SigLIP (MULTIMODAL text+image). GATED
+  # (accept Google HAI-DEF terms + login). Text-only twin: google/medgemma-27b-text-it.
+  # vLLM needs Gemma3 multimodal support; for text MCQ the text-it twin is simpler.
+  - {id: medgemma-27b-it, type: hf, model: google/medgemma-27b-it, dtype: bfloat16,
+     max_model_len: 8192, gpu_memory_utilization: 0.90}
+
+  # ClinicalGPT-R1 — MedFound team, Qwen2.5-7B reasoning model (EN preview). AFL-3.0.
+  - {id: clinicalgpt-r1, type: hf, model: medicalai/ClinicalGPT-R1-Qwen-7B-EN-preview,
+     dtype: bfloat16, max_model_len: 32768}
+
+  # ===========================================================================
+  # 🩺  CHINESE MEDICAL LLMs
+  # ===========================================================================
+
+  # HuatuoGPT-II (华佗GPT2) — FreedomIntelligence. 7B/13B=Baichuan2, 34B=Yi-34B.
+  # trust_remote_code=True (custom modeling). NO HF chat template (in-house
+  # HuatuoChat format) — the apply_chat_template fallback applies. ctx 4096.
+  - {id: huatuogpt2-7b, type: hf, model: FreedomIntelligence/HuatuoGPT2-7B,
+     dtype: bfloat16, max_model_len: 4096, trust_remote_code: true}
+  # - {id: huatuogpt2-13b, type: hf, model: FreedomIntelligence/HuatuoGPT2-13B,
+  #    dtype: bfloat16, max_model_len: 4096, trust_remote_code: true}
+  # - {id: huatuogpt2-34b, type: hf, model: FreedomIntelligence/HuatuoGPT2-34B,
+  #    dtype: bfloat16, max_model_len: 4096, trust_remote_code: true, tensor_parallel: 2}
+
+  # HuatuoGPT-o1 — FreedomIntelligence reasoning models. 7B/72B=Qwen2.5 (bilingual),
+  # 8B/70B=LLaMA-3.1 (EN). Standard arch + chat template. Emits "## Thinking / ##
+  # Final Response". Apache-2.0. ctx 32768.
+  - {id: huatuogpt-o1-7b, type: hf, model: FreedomIntelligence/HuatuoGPT-o1-7B,
+     dtype: bfloat16, max_model_len: 32768}
+  # - {id: huatuogpt-o1-8b, type: hf, model: FreedomIntelligence/HuatuoGPT-o1-8B,
+  #    dtype: bfloat16, max_model_len: 32768}
+  # - {id: huatuogpt-o1-70b, type: hf, model: FreedomIntelligence/HuatuoGPT-o1-70B,
+  #    dtype: bfloat16, max_model_len: 32768, tensor_parallel: 2}
+  # - {id: huatuogpt-o1-72b, type: hf, model: FreedomIntelligence/HuatuoGPT-o1-72B,
+  #    dtype: bfloat16, max_model_len: 32768, tensor_parallel: 2}
+
+  # AquilaMed-RL — BAAI, Aquila3 (~8B, Llama-compatible). trust_remote_code=True
+  # (custom auto_map). ChatML prompts. BAAI Aquila licence. Short ctx 4096.
+  - {id: aquilamed-rl, type: hf, model: BAAI/AquilaMed-RL, dtype: bfloat16,
+     max_model_len: 4096, trust_remote_code: true}
+
+  # DISC-MedLLM — Fudan, Baichuan-13B-Base. trust_remote_code=True (custom
+  # Baichuan). dtype float16. Baichuan user/assistant token format. ctx 4096.
+  - {id: disc-medllm, type: hf, model: Flmc/DISC-MedLLM, dtype: float16,
+     max_model_len: 4096, trust_remote_code: true}
+
+  # Baichuan-M1-14B-Instruct — baichuan-inc, custom `baichuan_m1` arch (from
+  # scratch). trust_remote_code=True; needs transformers>=4.47. Verify your vLLM
+  # build supports baichuan_m1 (else use backend: transformers). ctx 32768.
+  - {id: baichuan-m1-14b, type: hf, model: baichuan-inc/Baichuan-M1-14B-Instruct,
+     dtype: bfloat16, max_model_len: 32768, trust_remote_code: true}
+
+  # Baichuan-M2-32B — baichuan-inc, Qwen2.5-32B base (plain qwen2 config, so NO
+  # trust_remote_code actually needed). Apache-2.0. 128K ctx (capped here to 32768
+  # to fit memory). vLLM>=0.9: serve with --reasoning-parser qwen3 if you want the
+  # think trace stripped. ~65GB bf16.
+  - {id: baichuan-m2-32b, type: hf, model: baichuan-inc/Baichuan-M2-32B,
+     dtype: bfloat16, max_model_len: 32768}
+
+  # ===========================================================================
+  # 🀄  TRADITIONAL CHINESE MEDICINE (中医) LLMs
+  # ===========================================================================
+
+  # Dao1-30b-a3b — CMLM, Qwen3-30B-A3B MoE (128 experts, ~3B active/token). bf16,
+  # ChatML, ctx 40960. Native vLLM (no trust_remote_code despite README). Research/
+  # non-clinical use only. ~60GB bf16 (1×80GB ok).
+  - {id: dao1-30b-a3b, type: hf, model: CMLM/Dao1-30b-a3b, dtype: bfloat16,
+     max_model_len: 32768}
+
+  # BianCang (扁仓) — QLU-NLP, Qwen2.5. Prefer the -Instruct variants. Standard
+  # Qwen2 -> native vLLM, ChatML. ctx 32768.
+  - {id: biancang, type: hf, model: QLU-NLP/BianCang-Qwen2.5-7B-Instruct,
+     dtype: bfloat16, max_model_len: 32768}
+  # - {id: biancang-14b, type: hf, model: QLU-NLP/BianCang-Qwen2.5-14B-Instruct,
+  #    dtype: bfloat16, max_model_len: 32768}
+
+  # Taiyi (太一) — DUTIR-BioNLP, ORIGINAL Qwen-1 7B (QWenLMHeadModel, custom code)
+  # -> trust_remote_code=True genuinely required. Bilingual BioNLP. ctx 8192.
+  - {id: taiyi, type: hf, model: DUTIR-BioNLP/Taiyi-LLM, dtype: bfloat16,
+     max_model_len: 8192, trust_remote_code: true}
+
+  # ZhongJing-2-1.8B (仲景) — CMLM. The repo is a PEFT LoRA ADAPTER on top of
+  # Qwen1.5-1.8B-Chat, so we point `model` at the base and `lora` at the adapter
+  # (vLLM applies it at runtime). Tiny — runs on a free Colab T4.
+  - {id: zhongjing-2-1_8b, type: hf, model: Qwen/Qwen1.5-1.8B-Chat,
+     lora: CMLM/ZhongJing-2-1_8b, dtype: bfloat16, max_model_len: 8192}
+
+  # Citrus — jdh-algo, Llama-3.1-70B (expert cognitive pathways). Text-only. ~140GB
+  # bf16: tensor_parallel: 2. Qwen variant: jdh-algo/Citrus1.0-Qwen-72B.
+  - {id: citrus-70b, type: hf, model: jdh-algo/Citrus1.0-llama-70B, dtype: bfloat16,
+     max_model_len: 32768, tensor_parallel: 2}
+  # - {id: citrus-qwen-72b, type: hf, model: jdh-algo/Citrus1.0-Qwen-72B,
+  #    dtype: bfloat16, max_model_len: 32768, tensor_parallel: 2}
+
+  # ===========================================================================
+  # 🖼  MULTIMODAL MEDICAL LLMs (vision-language)
+  #     Wired here as text backends for the MCQ slice; for image benchmarks use
+  #     configs/catalog_multimodal.yaml. Both need trust_remote_code=True.
+  # ===========================================================================
+
+  # Lingshu (灵枢) — Qwen2.5-VL based medical MLLM (12+ imaging modalities). MIT.
+  - {id: lingshu-7b, type: hf, model: lingshu-medical-mllm/Lingshu-7B,
+     dtype: bfloat16, max_model_len: 32768, trust_remote_code: true}
+  # - {id: lingshu-32b, type: hf, model: lingshu-medical-mllm/Lingshu-32B,
+  #    dtype: bfloat16, max_model_len: 32768, trust_remote_code: true, tensor_parallel: 2}
+
+  # ===========================================================================
+  # ⚠️  NOT PUBLICLY RELEASED ON HUGGINGFACE (documented for completeness)
+  # ===========================================================================
+  # Qibo (岐黄) TCM LLM — paper arXiv:2403.16056 (Tianjin Univ.), Chinese-LLaMA
+  #   7B/13B. No HF/GitHub weights found as of 2026-06; treat as unavailable.
+  #   Substitute BianCang or Dao1 for a downloadable TCM model.
+  # Qilin-Med (麒麟) text LLM — paper arXiv:2310.09089 (Baichuan-7B). Only the
+  #   MULTIMODAL LLaVA variant is released: williamliu/Qilin-Med-VL-Chat. To wire
+  #   the VL variant, use catalog_multimodal.yaml (it is not a plain text LLM):
+  # - {id: qilin-med-vl, type: hf, model: williamliu/Qilin-Med-VL-Chat,
+  #    dtype: bfloat16, trust_remote_code: true}
+
+datasets:
+  # A small, fast bilingual MCQ slice so any selected model produces a score
+  # immediately. Pinned to immutable commits (see catalog_mcq.yaml for the full
+  # set + Chinese/TCM/open-ended/safety catalogs).
+  - id: medqa_usmle            # USMLE 4-option, English
+    adapter: hf_mcq
+    path: GBaker/MedQA-USMLE-4-options
+    revision: 0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18
+    split: test
+    field_map: {question: question, options: options, answer: answer_idx}
+    answer_format: letter
+    metrics: [mcq_accuracy]
+
+  - id: cmb_val                # CMB validation (280), Chinese — quick check
+    adapter: hf_mcq
+    path: FreedomIntelligence/CMB
+    data_files: https://huggingface.co/datasets/FreedomIntelligence/CMB/resolve/935fbc09edf1303d89872b21265ff597f426ac0d/CMB-Exam/CMB-val/CMB-val-merge.json
+    field_map: {question: question, options: option, answer: answer}
+    answer_format: multi
+    split_type: validation
+    metrics: [mcq_accuracy]
