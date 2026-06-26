@@ -13,6 +13,7 @@
 [![TCM](https://img.shields.io/badge/中医-first--class-c1272d.svg)](#-traditional-chinese-medicine-中医)
 [![Ethics & Safety](https://img.shields.io/badge/伦理·安全-first--class-2E8B57.svg)](configs/catalog_ethics_safety.yaml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -211,7 +212,9 @@ python -m medeval run configs/catalog_med_models.yaml --models biancang --limit 
 
 Covered: **ZhongJing-2 · Dao1-30B-A3B · BianCang · Taiyi · DISC-MedLLM** (TCM/CN) · **HuatuoGPT-II · HuatuoGPT-o1 · AquilaMed · Baichuan-M1/M2 · ClinicalGPT-R1** (CN medical) · **Meditron-70B · BioMistral · DeepSeek-R1-32B · MedGemma-27B · Citrus** (intl) · **Lingshu** (multimodal). Quirks handled: ZhongJing-2 is a LoRA (applied on `Qwen1.5-1.8B-Chat`); Baichuan/Taiyi/DISC/AquilaMed need `trust_remote_code`; Meditron/MedGemma are gated; reasoning models get a larger `max_tokens`.
 
-▶️ **One-click GPU run**: [`notebooks/Med_Bench_Arena_Colab.ipynb`](notebooks/Med_Bench_Arena_Colab.ipynb) — clone · install vLLM · pick a model · score it on MedQA + CMB.
+▶️ **One-click GPU run** — open the notebook straight in Google Colab (no local setup; clone · install vLLM · pick a model · score it on MedQA + CMB):
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 
 ---
 

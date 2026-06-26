@@ -13,6 +13,7 @@
 [![TCM](https://img.shields.io/badge/中医-原生支持-c1272d.svg)](#-中医原生支持)
 [![Ethics & Safety](https://img.shields.io/badge/伦理·安全-原生支持-2E8B57.svg)](configs/catalog_ethics_safety.yaml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-参与贡献)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 
 [English](README.md) · **简体中文**
 
@@ -210,7 +211,9 @@ python -m medeval run configs/catalog_med_models.yaml --models biancang --limit 
 
 已覆盖：**仲景 ZhongJing-2 · Dao1-30B-A3B · 扁仓 BianCang · 太一 Taiyi · DISC-MedLLM**（中医/中文）· **HuatuoGPT-II · HuatuoGPT-o1 · AquilaMed · Baichuan-M1/M2 · ClinicalGPT-R1**（中文医学）· **Meditron-70B · BioMistral · DeepSeek-R1-32B · MedGemma-27B · Citrus**（国际）· **灵枢 Lingshu**（多模态）。已处理的坑：仲景是 LoRA（挂载在 `Qwen1.5-1.8B-Chat` 上）；Baichuan/太一/DISC/AquilaMed 需 `trust_remote_code`；Meditron/MedGemma 受限需授权；推理模型给更大的 `max_tokens`。
 
-▶️ **GPU 一键运行**：[`notebooks/Med_Bench_Arena_Colab.ipynb`](notebooks/Med_Bench_Arena_Colab.ipynb) —— 克隆 · 装 vLLM · 选模型 · 在 MedQA + CMB 上打分。
+▶️ **GPU 一键运行** —— 点下面的徽章直接在 Google Colab 打开运行（无需本地环境；克隆 · 装 vLLM · 选模型 · 在 MedQA + CMB 上打分）：
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 
 > ⚠️ **Qibo（岐黄）** 与 **Qilin-Med（麒麟）文本版**未在 HuggingFace 公开发布（仅论文/或仅多模态版），已在 `MODELS.md` 与配置中如实标注；中医可用 BianCang / Dao1 替代。
 
