@@ -46,6 +46,33 @@ def _gen_from_dict(d: dict[str, Any]) -> Generation:
                       finish_reason=d.get("finish_reason", ""))
 
 
+def _make_pbar(total: int, desc: str, initial: int = 0):
+    """tqdm progress bar with a plain-print fallback when tqdm is absent."""
+    try:
+        from tqdm.auto import tqdm as _tqdm
+        return _tqdm(total=total, initial=initial, desc=desc,
+                     unit="sample", dynamic_ncols=True, leave=True)
+    except ImportError:
+        class _FallbackBar:
+            def __init__(self) -> None:
+                self.n = initial
+                self._last_report = initial
+
+            def update(self, n: int = 1) -> None:
+                self.n += n
+                if not total:
+                    return
+                pct = self.n * 100 // total
+                if (self.n - self._last_report >= max(1, total // 20)
+                        or self.n >= total):
+                    self._last_report = self.n
+                    print(f"  [{desc}] {self.n}/{total} ({pct}%)", flush=True)
+
+            def close(self) -> None:
+                pass
+        return _FallbackBar()
+
+
 def headline(agg: dict[str, Any]) -> tuple[str, float]:
     """Pick the salient (name, value) from a metric aggregation for ranking."""
     for metric, d in agg.items():
@@ -223,6 +250,23 @@ class Runner:
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
+    def _append_cache_batch(self, path: Path, preds: list[Prediction]) -> None:
+        """Write a batch of predictions in one file open — Drive-friendly."""
+        if not self.cache or not preds:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            for pred in preds:
+                rec = {
+                    "sample_id": pred.sample_id,
+                    "generation": _gen_to_dict(pred.generation),
+                    "parsed": (pred.parsed if not isinstance(pred.parsed, set)
+                               else list(pred.parsed)),
+                    "rollouts": pred.rollouts,
+                    "trajectory": pred.trajectory,
+                }
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
     # --- prediction -------------------------------------------------------
     async def _predict(self, prov: ModelProvider, ds, samples: list[Sample]
                        ) -> dict[str, Prediction]:
@@ -230,39 +274,65 @@ class Runner:
         cpath = self._cache_path(prov, ds)
         preds = self._load_cache(cpath)
         todo = [s for s in samples if s.id not in preds]
+
+        n_cached, n_total = len(preds), len(samples)
         if not todo:
             return preds
+
+        if n_cached:
+            print(f"[medeval]   resuming: {n_cached}/{n_total} cached, "
+                  f"{len(todo)} remaining", flush=True)
+
+        pbar = _make_pbar(n_total, ds.id, initial=n_cached)
 
         if is_agent:
             support = self._agent_support(ds)
             sem = asyncio.Semaphore(self.concurrency)
 
-            async def roll(s: Sample):
+            async def roll(s: Sample) -> None:
                 async with sem:
-                    return await ds.rollout(s, prov, gen=self.gen_defaults, support=support)
-
-            results = await asyncio.gather(*(roll(s) for s in todo))
-            for pred in results:
+                    pred = await ds.rollout(s, prov, gen=self.gen_defaults, support=support)
                 preds[pred.sample_id] = pred
                 self._append_cache(cpath, pred)
+                pbar.update(1)
+
+            await asyncio.gather(*(roll(s) for s in todo))
         else:
-            gens = await prov.agenerate_many([s.messages for s in todo], **self.gen_defaults)
-            for s, g in zip(todo, gens):
-                pred = ds.parse(s, g.text)
-                pred.generation = g  # attach real token/cost accounting
-                preds[s.id] = pred
-                self._append_cache(cpath, pred)
+            chunk_size = max(1, int(
+                self.cfg.get("run", {}).get("checkpoint_every", 64)))
+            for i in range(0, len(todo), chunk_size):
+                chunk = todo[i: i + chunk_size]
+                gens = await prov.agenerate_many(
+                    [s.messages for s in chunk], **self.gen_defaults)
+                batch_preds: list[Prediction] = []
+                for s, g in zip(chunk, gens):
+                    pred = ds.parse(s, g.text)
+                    pred.generation = g
+                    preds[s.id] = pred
+                    batch_preds.append(pred)
+                self._append_cache_batch(cpath, batch_preds)
+                pbar.update(len(batch_preds))
+
+        pbar.close()
         return preds
 
     # --- scoring ----------------------------------------------------------
     async def _score_all(self, metric, samples, preds) -> list:
         sem = asyncio.Semaphore(self.concurrency)
+        pbar = (_make_pbar(len(samples), f"scoring [{metric.metric_name}]")
+                if metric.needs_judge and len(samples) > 10 else None)
 
         async def one(s: Sample):
             async with sem:
-                return await metric.score(s, preds[s.id])
+                result = await metric.score(s, preds[s.id])
+            if pbar:
+                pbar.update(1)
+            return result
 
-        return await asyncio.gather(*(one(s) for s in samples))
+        results = await asyncio.gather(*(one(s) for s in samples))
+        if pbar:
+            pbar.close()
+        return results
 
     async def _eval(self, prov: ModelProvider, ds, samples) -> dict[str, Any]:
         preds = await self._predict(prov, ds, samples)
@@ -361,7 +431,7 @@ class Runner:
                 leaderboard.append(row)
                 key, val = headline(row["metrics"])
                 print(f"           -> {key}={val:.4f}")
-        self._write_leaderboard(leaderboard)
+                self._write_leaderboard(leaderboard)  # incremental flush after each (model, dataset)
         if failures:
             print(f"[medeval] {len(failures)} dataset(s) skipped:")
             for m in failures:
