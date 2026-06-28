@@ -136,7 +136,9 @@ class LLMJudge(Metric):
         ref = sample.reference.get("reference") or sample.reference.get("answer")
         gold = sample.reference.get("syndrome") or sample.reference.get("label")
         lines = [
-            "You are a strict, fair medical examiner grading a model's answer against a rubric.",
+            "You are a strict, fair medical examiner grading a model's answer against a rubric. "
+            "The question and answer may be in Chinese or English — grade in whichever language the content is in. "
+            "（题目和回答可能是中文或英文，请用对应语言进行评分。）",
             "Score EACH criterion from 0.0 (not met) to 1.0 (fully met). Partial credit is allowed.",
             "",
             "=== CASE / QUESTION ===",
