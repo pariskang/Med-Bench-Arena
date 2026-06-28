@@ -222,7 +222,7 @@ python -m medeval run configs/catalog_med_models.yaml --models biancang        -
 
 已自动处理的坑：**仲景 ZhongJing-2** 是挂在 `Qwen1.5-1.8B-Chat` 上的 LoRA；**Baichuan / 太一 / DISC / AquilaMed** 需 `trust_remote_code`；**Meditron / MedGemma** 受限（需接受许可 + `huggingface-cli login`）；推理模型（**DeepSeek-R1 / HuatuoGPT-o1 / Baichuan-M2 / ClinicalGPT-R1**）给更大的 `max_tokens`；vLLM 加载失败会自动回退到 transformers 而非崩溃。*（**Qibo 岐黄** 与 **Qilin-Med 麒麟文本版**未在 HF 公开发布，已在 [`MODELS.md`](MODELS.md) 如实标注；中医可用 BianCang / Dao1 替代。）*
 
-▶️ **GPU 一键运行** —— 点徽章直接在 Google Colab 打开运行（无需本地环境；克隆 · 装 vLLM · 选模型 · **跑全部基准** · 结果写入 **Google Drive**）：
+▶️ **GPU 一键运行** —— 点徽章直接在 Google Colab 打开运行（无需本地环境；克隆 · 装 vLLM · 选模型 · **跑全部基准、全部题目** · 结果写入 **Google Drive**）。Notebook 默认 `LIMIT = 0`，即对每个数据集跑**完整题库**；设 `LIMIT = 50` 可做快速冒烟测试：
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 

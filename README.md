@@ -223,7 +223,7 @@ python -m medeval run configs/catalog_med_models.yaml --models biancang        -
 
 Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baichuan / Taiyi / DISC / AquilaMed** need `trust_remote_code`; **Meditron / MedGemma** are gated (accept the license + `huggingface-cli login`); reasoning models (**DeepSeek-R1 / HuatuoGPT-o1 / Baichuan-M2 / ClinicalGPT-R1**) get a larger `max_tokens`; and a vLLM load failure falls back to transformers instead of crashing. *(Qibo and the Qilin-Med text model aren't publicly on HF — documented in [`MODELS.md`](MODELS.md).)*
 
-▶️ **One-click GPU run** — open the notebook straight in Google Colab (no local setup; clone · install vLLM · pick a model · **sweep every benchmark** · save all results to **Google Drive**):
+▶️ **One-click GPU run** — open the notebook straight in Google Colab (no local setup; clone · install vLLM · pick a model · **sweep every benchmark, every question** · save all results to **Google Drive**). The notebook's `LIMIT = 0` default scores the *full* set of each dataset; set `LIMIT = 50` for a quick smoke test:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 
