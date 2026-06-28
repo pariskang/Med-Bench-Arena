@@ -44,6 +44,10 @@ datasets:
     source_url: https://huggingface.co/datasets/ncbi/MedCalc-Bench-v1.2/resolve/main/test_data_11_18_final.csv
     field_map: {prompt: ["Patient Note", "Question"], reference: "Ground Truth Answer",
                 lower_limit: "Lower Limit", upper_limit: "Upper Limit"}
+    # Explicit output instruction: the numeric_match extractor looks for the LAST
+    # number in the response, which can be a sub-score from the explanation rather
+    # than the final answer. Asking the model to label its answer avoids this.
+    prompt_template: "{prompt}\n\nPlease show your work, then state your final numerical answer on the last line as:\nAnswer: <number>"
     metrics: [numeric_match]     # correct iff Lower Limit <= pred <= Upper Limit (±5% decimal / exact else)
     # use v1.2 (ungated, CC-BY-SA); v1.0/v1.1 are gated. Exclude date-output calculators.
 

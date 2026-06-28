@@ -68,17 +68,44 @@ def _coerce_score(v: Any) -> float:
 
 
 def _extract_json(text: str) -> dict[str, Any]:
-    m = _JSON_RE.search(text or "")
-    if not m:
-        return {}
+    """Extract the first JSON object from ``text``.
+
+    Parsing order:
+    1. Regex-narrow to the ``{...}`` block, then ``json.loads`` (fast, zero-copy).
+    2. ``json_repair.repair_json`` on the narrowed block (handles trailing commas,
+       single quotes, Python True/False/None, truncated objects, unquoted keys).
+    3. If the regex over-clipped (e.g. nested ``}``), retry repair on the full text.
+    4. Bare single-quote fallback when json-repair is not installed.
+    """
+    text = text or ""
+    m = _JSON_RE.search(text)
+    candidate = m.group(0) if m else text
+    # Fast path: well-formed JSON (the common case for well-behaved judges)
     try:
-        return json.loads(m.group(0))
+        return json.loads(candidate)
     except Exception:
-        # be forgiving of trailing commas / single quotes
-        try:
-            return json.loads(m.group(0).replace("'", '"'))
-        except Exception:
-            return {}
+        pass
+    # Repair path: tolerates malformed output from reasoning / chat models
+    try:
+        from json_repair import repair_json
+        obj = repair_json(candidate, return_objects=True)
+        if isinstance(obj, dict):
+            return obj
+        # regex may have clipped the closing brace; retry on the full text
+        if m:
+            obj = repair_json(text, return_objects=True)
+            if isinstance(obj, dict):
+                return obj
+    except ImportError:
+        # json-repair not installed; minimal single-quote fallback
+        if m:
+            try:
+                return json.loads(m.group(0).replace("'", '"'))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {}
 
 
 # Verbatim grader template from openai/simple-evals healthbench_eval.py (abridged
@@ -136,7 +163,9 @@ class LLMJudge(Metric):
         ref = sample.reference.get("reference") or sample.reference.get("answer")
         gold = sample.reference.get("syndrome") or sample.reference.get("label")
         lines = [
-            "You are a strict, fair medical examiner grading a model's answer against a rubric.",
+            "You are a strict, fair medical examiner grading a model's answer against a rubric. "
+            "The question and answer may be in Chinese or English — grade in whichever language the content is in. "
+            "（题目和回答可能是中文或英文，请用对应语言进行评分。）",
             "Score EACH criterion from 0.0 (not met) to 1.0 (fully met). Partial credit is allowed.",
             "",
             "=== CASE / QUESTION ===",

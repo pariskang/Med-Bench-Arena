@@ -1,5 +1,6 @@
 # Core (always needed)
 pyyaml>=6.0
+json-repair>=0.30          # robust JSON parsing for LLM judge output
 
 # Dataset loading (hf_mcq, and any HF-hosted source)
 datasets>=2.18

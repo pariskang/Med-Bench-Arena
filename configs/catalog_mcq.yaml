@@ -13,7 +13,9 @@ run:
   cache: true
 
 eval:
-  gen: {temperature: 0.0, max_tokens: 512}
+  # 1024 tokens: enough headroom for reasoning models' <think> blocks on MCQ
+  # (512 was too tight and caused answer truncation for DeepSeek-R1 / HuatuoGPT-o1).
+  gen: {temperature: 0.0, max_tokens: 1024}
 
 models:
   - {id: mock-model, type: mock, behavior: auto}

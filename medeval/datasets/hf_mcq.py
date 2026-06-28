@@ -74,11 +74,19 @@ class HFMCQAdapter(DatasetAdapter):
         self.shuffle_options = bool(config.get("shuffle_options", False))
         self.system_prompt = config.get("system_prompt")
         self.prompt_template = config.get("prompt_template")
-        self.instruction = config.get(
-            "instruction",
-            "Answer with the letter of the correct option (e.g. \"A\"). "
-            "请只回答正确选项的字母。",
-        )
+        # Multi-correct questions need a different default instruction so the model
+        # knows to output all correct letters (e.g. "BC"), not just one.
+        if config.get("answer_format") == "multi":
+            _default_instruction = (
+                'Answer with ALL correct option letters written together without spaces '
+                '(e.g. "BC"). 请将所有正确选项的字母连续写出，不加空格（如"BC"）。'
+            )
+        else:
+            _default_instruction = (
+                'Answer with the letter of the correct option (e.g. "A"). '
+                '请只回答正确选项的字母。'
+            )
+        self.instruction = config.get("instruction", _default_instruction)
         self.trust_remote_code = bool(config.get("trust_remote_code", False))
         # multimodal: field_map.image may name a column (or list) of images;
         # image_base is prepended to relative paths/URLs.
@@ -430,7 +438,10 @@ class HFMCQAdapter(DatasetAdapter):
         if not text:
             return None
         letters = self._letters_for(n)
-        t = text.strip()
+        # Strip <think>…</think> reasoning traces (DeepSeek-R1 / HuatuoGPT-o1 /
+        # ClinicalGPT-R1 / Baichuan-M2 style) so the "answer is X" pattern below
+        # matches the *final* answer block, not an intermediate letter in the chain.
+        t = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip() or text.strip()
         # 1) explicit "answer is X" / "答案是X" / "正确选项为X"
         #    The letter must be standalone (not the first letter of an option word
         #    like the "A" in "Atrophy") -> require it is not followed by a letter.
@@ -458,7 +469,9 @@ class HFMCQAdapter(DatasetAdapter):
         ('B, C, D and E' / 'B、C、D、E')."""
         letters = self._letters_for(n)
         rng = re.escape("".join(letters))
-        t = text or ""
+        # Strip <think>…</think> blocks: thinking traces accumulate every letter
+        # mentioned, flooding the multi-letter extraction with false positives.
+        t = re.sub(r"<think>.*?</think>", "", text or "", flags=re.DOTALL).strip() or text or ""
         picks: set[int] = set()
         # contiguous runs of >=2 option letters, e.g. "BCDE"
         for run in re.findall(rf"(?<![A-Za-z])([{rng}]{{2,}})(?![A-Za-z])", t):
