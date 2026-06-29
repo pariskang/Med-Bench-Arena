@@ -74,17 +74,21 @@ class HFMCQAdapter(DatasetAdapter):
         self.shuffle_options = bool(config.get("shuffle_options", False))
         self.system_prompt = config.get("system_prompt")
         self.prompt_template = config.get("prompt_template")
-        # Multi-correct questions need a different default instruction so the model
-        # knows to output all correct letters (e.g. "BC"), not just one.
+        # Zero-shot CoT: ask the model to reason first, then commit to a structured
+        # final-answer line. The parser already handles "Answer: X" via its first-priority
+        # regex; taking the LAST match in _extract_single/_extract_multi means CoT
+        # backtracking ("I first thought A, but the answer is B") resolves correctly.
         if config.get("answer_format") == "multi":
             _default_instruction = (
-                'Answer with ALL correct option letters written together without spaces '
-                '(e.g. "BC"). 请将所有正确选项的字母连续写出，不加空格（如"BC"）。'
+                "Think step by step, then write ALL correct letters together on a new line as:\n"
+                "Answer: BC\n"
+                "（请逐步推理，然后在新行写出所有正确选项字母，格式为 Answer: BC）"
             )
         else:
             _default_instruction = (
-                'Answer with the letter of the correct option (e.g. "A"). '
-                '请只回答正确选项的字母。'
+                "Think step by step, then state your final answer on a new line as:\n"
+                "Answer: A\n"
+                "（请逐步推理，然后将最终答案写在新行，格式为 Answer: A）"
             )
         self.instruction = config.get("instruction", _default_instruction)
         self.trust_remote_code = bool(config.get("trust_remote_code", False))
@@ -442,15 +446,18 @@ class HFMCQAdapter(DatasetAdapter):
         # ClinicalGPT-R1 / Baichuan-M2 style) so the "answer is X" pattern below
         # matches the *final* answer block, not an intermediate letter in the chain.
         t = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip() or text.strip()
-        # 1) explicit "answer is X" / "答案是X" / "正确选项为X"
+        # 1) explicit "answer is X" / "Answer: X" / "答案是X" / "正确选项为X"
+        #    Use finditer + LAST match so CoT backtracking resolves correctly
+        #    ("I first thought A … but the answer is B" → B wins).
         #    The letter must be standalone (not the first letter of an option word
         #    like the "A" in "Atrophy") -> require it is not followed by a letter.
-        m = re.search(
+        all_ms = list(re.finditer(
             r"(?:answer|correct option|正确答案|答案|选项)\s*(?:is|:|：|为|是)?\s*\(?([A-Z])\)?(?![A-Za-z])",
             t, re.IGNORECASE,
-        )
-        if m and m.group(1).upper() in letters:
-            return letters.index(m.group(1).upper())
+        ))
+        valid_ms = [m for m in all_ms if m.group(1).upper() in letters]
+        if valid_ms:
+            return letters.index(valid_ms[-1].group(1).upper())
         # 2) a parenthesized or punctuated standalone letter, prefer the last
         cands = re.findall(r"(?:^|[^A-Za-z])\(?([A-Z])\)?(?:[.):、]|\b)", t)
         cands = [c.upper() for c in cands if c.upper() in letters]
@@ -472,11 +479,24 @@ class HFMCQAdapter(DatasetAdapter):
         # Strip <think>…</think> blocks: thinking traces accumulate every letter
         # mentioned, flooding the multi-letter extraction with false positives.
         t = re.sub(r"<think>.*?</think>", "", text or "", flags=re.DOTALL).strip() or text or ""
+        # 0) Priority: structured "Answer: BC" final-answer line (CoT output format).
+        #    Use LAST match so CoT backtracking resolves correctly.
+        #    [A-Z]+ captures only uppercase option letters; (?![A-Za-z]) prevents
+        #    partial matches into words (e.g. "Answer: Because..." does not fire).
+        m0s = list(re.finditer(
+            r"(?:[Aa]nswer|答案)\s*[:：]\s*([A-Z]+)(?![A-Za-z])",
+            t,
+        ))
+        if m0s:
+            run = m0s[-1].group(1)
+            idxs = sorted({letters.index(c) for c in run if c in letters})
+            if idxs:
+                return idxs
         picks: set[int] = set()
-        # contiguous runs of >=2 option letters, e.g. "BCDE"
+        # 1) contiguous runs of >=2 option letters, e.g. "BCDE"
         for run in re.findall(rf"(?<![A-Za-z])([{rng}]{{2,}})(?![A-Za-z])", t):
             picks.update(letters.index(c) for c in run)
-        # standalone single option letters, e.g. "B, C, D and E"
+        # 2) standalone single option letters, e.g. "B, C, D and E"
         for c in re.findall(rf"(?<![A-Za-z])([{rng}])(?![A-Za-z])", t):
             picks.add(letters.index(c))
         if picks:

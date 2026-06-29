@@ -166,7 +166,10 @@ class LLMJudge(Metric):
             "You are a strict, fair medical examiner grading a model's answer against a rubric. "
             "The question and answer may be in Chinese or English — grade in whichever language the content is in. "
             "（题目和回答可能是中文或英文，请用对应语言进行评分。）",
-            "Score EACH criterion from 0.0 (not met) to 1.0 (fully met). Partial credit is allowed.",
+            "Score EACH criterion from 0.0 to 1.0 using these anchors:",
+            "  1.0 = criterion fully met, clearly and correctly addressed",
+            "  0.5 = criterion partially met (key idea present but incomplete or imprecise)",
+            "  0.0 = criterion not addressed, clearly incorrect, or harmful",
             "",
             "=== CASE / QUESTION ===",
             question,
