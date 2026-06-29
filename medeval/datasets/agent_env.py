@@ -42,6 +42,16 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", str(s)).strip().lower()
 
 
+def _strip_think(s: str) -> str:
+    """Remove <think>…</think> reasoning traces (and a dangling unterminated
+    <think> tail) so agent action parsing sees the model's actual command, not an
+    intermediate thought. Mirrors the MCQ path (hf_mcq.py) for reasoning models
+    (DeepSeek-R1 / HuatuoGPT-o1 / ClinicalGPT-R1 / Baichuan-M2)."""
+    s = re.sub(r"<think>.*?</think>", "", s or "", flags=re.DOTALL)
+    s = re.sub(r"<think>.*$", "", s, flags=re.DOTALL)
+    return s.strip()
+
+
 def _download(url: str, dest: Path) -> Path:
     if not dest.exists():
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +122,7 @@ class AgentAdapter(DatasetAdapter):
             for turn in range(self.max_turns):
                 g = await provider.agenerate(messages, **gen)
                 last_gen = g
-                action = g.text
+                action = _strip_think(g.text)   # reasoning models: parse the command, not the <think> trace
                 messages.append(Message("assistant", action))
                 traj.append({"role": "doctor", "content": action})
                 obs, reward, done, info = await env.step(action)
@@ -176,8 +186,12 @@ class DemoDiagnosisEnv(AgentEnvironment):
 
     async def step(self, action: str):
         self.turns += 1
-        if "diagnosis" in action.lower():
-            said = action.split(":", 1)[-1].strip()
+        # Commit only on an explicit "DIAGNOSIS: <x>" marker (last occurrence), not
+        # on any mention of the word "diagnosis" — a model reasoning about *whether*
+        # to diagnose would otherwise trigger a premature, mis-parsed commit.
+        ms = list(re.finditer(r"(?i)DIAGNOSIS\s*[:：]\s*([^\n\r]+)", action))
+        if ms:
+            said = ms[-1].group(1).strip()
             success = _norm(self.s["correct"]) in _norm(said) or _norm(said) in _norm(self.s["correct"])
             return ("", 1.0 if success else 0.0, True,
                     {"success": success, "said": said, "correct": self.s["correct"]})
@@ -244,7 +258,10 @@ class AgentClinicEnv(AgentEnvironment):
         self.turns_left -= 1
         up = action.upper()
         if "DIAGNOSIS READY" in up:
-            dx = action.split(":", 1)[-1].strip() if ":" in action else action
+            # extract from the marker, not the first colon — otherwise a "Reasoning:
+            # … DIAGNOSIS READY: X" turn hands the whole reasoning blob to the moderator.
+            m = re.search(r"(?i)DIAGNOSIS\s+READY\s*[:：]\s*([^\n\r]+)", action)
+            dx = m.group(1).strip() if m else action.split(":", 1)[-1].strip()
             success = await self._moderate(dx, self.correct)
             return ("", 1.0 if success else 0.0, True,
                     {"success": success, "diagnosis": dx, "correct": self.correct})
@@ -253,6 +270,10 @@ class AgentClinicEnv(AgentEnvironment):
             obs = self._measurement(action)
         else:
             obs = await self._patient(action)
+        # tell the doctor the budget so it can commit before running out of turns
+        if not done:
+            obs += (f"\n[Turns remaining: {self.turns_left}. On your last turn give "
+                    "'DIAGNOSIS READY: <diagnosis>'.]")
         return (obs, 0.0, done, {"success": False} if done else {})
 
     # --- patient / measurement / moderator -------------------------------
@@ -266,7 +287,9 @@ class AgentClinicEnv(AgentEnvironment):
                              "naming your diagnosis. Your background: " + info),
                      Message("user", action)], temperature=0.7, max_tokens=128)
                 return g.text
-            return info[:400] or "I'm not feeling well, doctor."
+            # scripted fallback: redact the gold diagnosis so the raw record dump
+            # can't leak the answer (which would inflate the offline pass^k).
+            return self._redact(info)[:400] or "I'm not feeling well, doctor."
         actor = self.osce.get("Patient_Actor", {})
         if prov is not None:
             sys = ("You are a patient. Reveal only symptoms you have in 1-3 sentences; "
@@ -301,13 +324,24 @@ class AgentClinicEnv(AgentEnvironment):
                 return f"RESULTS: {key}: {val}"
         return "RESULTS: NORMAL READINGS"
 
+    def _redact(self, text: str) -> str:
+        c = (self.correct or "").strip()
+        if c and len(c) >= 3:
+            text = re.sub(re.escape(c), "[redacted]", text, flags=re.IGNORECASE)
+        return text
+
     async def _moderate(self, dx: str, correct: str) -> bool:
         prov = self.support.get("moderator")
         if prov is not None:
             q = (f"Correct diagnosis: {correct}\nDoctor's diagnosis: {dx}\n"
                  "Do they refer to the same condition? Answer yes or no.")
             g = await prov.agenerate([Message("user", q)], temperature=0.0, max_tokens=8)
-            return "yes" in g.text.lower()
+            tl = g.text.lower()
+            # word-boundary match, not `"yes" in tl` (which fires on "eyes"); and
+            # veto on an explicit negative so "No, different condition" scores False.
+            yes = bool(re.search(r"\b(yes|same|identical|correct|equivalent)\b", tl))
+            no = bool(re.search(r"\b(no|not|different|distinct)\b", tl))
+            return yes and not no
         return _norm(correct) in _norm(dx) or _norm(dx) in _norm(correct)
 
     @staticmethod

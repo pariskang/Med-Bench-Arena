@@ -169,7 +169,7 @@ class LLMJudge(Metric):
             "Score EACH criterion from 0.0 to 1.0 using these anchors:",
             "  1.0 = criterion fully met, clearly and correctly addressed",
             "  0.5 = criterion partially met (key idea present but incomplete or imprecise)",
-            "  0.0 = criterion not addressed, clearly incorrect, or harmful",
+            "  0.0 = criterion not addressed or clearly incorrect",
             "",
             "=== CASE / QUESTION ===",
             question,
@@ -214,7 +214,7 @@ class LLMJudge(Metric):
             cost += gen.cost_usd
             data = _extract_json(gen.text)
             met = bool(data.get("criteria_met")) if isinstance(data, dict) else False
-            met_map[c["criterion"][:48]] = met
+            met_map[str(c["id"])] = met   # key by id, not criterion[:48] (prefix collisions)
             if met:
                 achieved += pts
         value = achieved / possible if possible > 0 else 0.0   # unclipped (may be <0)
@@ -229,9 +229,14 @@ class LLMJudge(Metric):
                 "llm_judge requires a judge provider; set eval.judge_model or "
                 "dataset.judge in the config."
             )
-        if self.per_criterion and sample.reference.get("rubric"):
-            return await self._score_healthbench(sample, pred)
         rubric = self._rubric_for(sample)
+        # Negative-point criteria (undesirable-behaviour penalties) MUST use the
+        # HealthBench per-criterion semantics: the default prompt scores a good
+        # answer 1.0, which would INVERT the sign for a negative-point criterion
+        # (crediting harmful answers). Route any such rubric through that path.
+        has_negative = any(float(c.get("points", 1)) < 0 for c in rubric)
+        if (self.per_criterion or has_negative) and sample.reference.get("rubric"):
+            return await self._score_healthbench(sample, pred)
         prompt = self._build_prompt(sample, pred.text, rubric)
         from ..schema import Message
         gen = await self.judge.agenerate(
@@ -241,11 +246,28 @@ class LLMJudge(Metric):
         data = _extract_json(gen.text)
         raw_scores = data.get("scores", {}) if isinstance(data, dict) else {}
 
+        # Tolerate a judge that keys by criterion text (or omits ids): try id →
+        # str(id) → exact criterion text. If NOTHING matched by key and the judge
+        # returned exactly one score per criterion, map positionally — otherwise a
+        # well-graded answer would silently collapse to 0.0 on every criterion.
+        def _lookup(c: dict[str, Any]) -> Any:
+            if isinstance(raw_scores, dict):
+                for key in (c["id"], str(c["id"]), c.get("criterion", "")):
+                    if key in raw_scores:
+                        return raw_scores[key]
+            return None
+
+        raw_vals = [_lookup(c) for c in rubric]
+        if (all(v is None for v in raw_vals) and isinstance(raw_scores, dict)
+                and len(raw_scores) == len(rubric)):
+            raw_vals = list(raw_scores.values())   # positional fallback
+        keys_matched = sum(1 for v in raw_vals if v is not None)
+
         achieved, possible = 0.0, 0.0
         per_crit: dict[str, float] = {}
-        for c in rubric:
+        for c, rv in zip(rubric, raw_vals):
             pts = float(c["points"])
-            s = _coerce_score(raw_scores.get(c["id"], raw_scores.get(str(c["id"]))))
+            s = _coerce_score(rv)
             per_crit[c["id"]] = s
             achieved += pts * s
             possible += max(pts, 0.0)
@@ -263,6 +285,10 @@ class LLMJudge(Metric):
                 "per_criterion": per_crit,
                 "achieved": achieved,
                 "possible": possible,
+                # how many rubric criteria the judge's JSON keys actually matched —
+                # < n_criteria flags a key-mismatch (e.g. the judge keyed by text).
+                "keys_matched": keys_matched,
+                "n_criteria": len(rubric),
                 "explanation": data.get("explanation", "") if isinstance(data, dict) else "",
                 "judge": getattr(self.judge, "id", "judge"),
                 "judge_cost_usd": gen.cost_usd,

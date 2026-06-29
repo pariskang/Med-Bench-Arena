@@ -75,9 +75,9 @@ class HFMCQAdapter(DatasetAdapter):
         self.system_prompt = config.get("system_prompt")
         self.prompt_template = config.get("prompt_template")
         # Zero-shot CoT: ask the model to reason first, then commit to a structured
-        # final-answer line. The parser already handles "Answer: X" via its first-priority
-        # regex; taking the LAST match in _extract_single/_extract_multi means CoT
-        # backtracking ("I first thought A, but the answer is B") resolves correctly.
+        # final-answer line. The parsers give this "Answer: X" line top priority (an
+        # anchored lane, last-match-wins for self-correcting CoT), and fall back to a
+        # looser keyword scan only when the structured line is absent.
         if config.get("answer_format") == "multi":
             _default_instruction = (
                 "Think step by step, then write ALL correct letters together on a new line as:\n"
@@ -446,18 +446,26 @@ class HFMCQAdapter(DatasetAdapter):
         # ClinicalGPT-R1 / Baichuan-M2 style) so the "answer is X" pattern below
         # matches the *final* answer block, not an intermediate letter in the chain.
         t = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip() or text.strip()
-        # 1) explicit "answer is X" / "Answer: X" / "答案是X" / "正确选项为X"
-        #    Use finditer + LAST match so CoT backtracking resolves correctly
-        #    ("I first thought A … but the answer is B" → B wins).
+        # 0) Highest priority: the structured "Answer: A" / "答案：A" line the CoT
+        #    instruction asks for. Take the LAST such line so a self-correcting chain
+        #    ("Answer: A … wait, Answer: B") resolves to the final commitment.
+        anchor = [m for m in re.finditer(
+            r"(?:answer|答案)\s*[:：]\s*\(?([A-Za-z])\)?(?![A-Za-z])", t, re.IGNORECASE)
+            if m.group(1).upper() in letters]
+        if anchor:
+            return letters.index(anchor[-1].group(1).upper())
+        # 1) looser "answer is X" / "正确选项为X" (no colon format). Prefer the FIRST
+        #    match: after committing, CoT explanations routinely reference *other*
+        #    options with the same keyword ("a common wrong answer is D"), so a
+        #    last-match here would grab a distractor and silently flip the answer.
         #    The letter must be standalone (not the first letter of an option word
         #    like the "A" in "Atrophy") -> require it is not followed by a letter.
-        all_ms = list(re.finditer(
+        m = re.search(
             r"(?:answer|correct option|正确答案|答案|选项)\s*(?:is|:|：|为|是)?\s*\(?([A-Z])\)?(?![A-Za-z])",
             t, re.IGNORECASE,
-        ))
-        valid_ms = [m for m in all_ms if m.group(1).upper() in letters]
-        if valid_ms:
-            return letters.index(valid_ms[-1].group(1).upper())
+        )
+        if m and m.group(1).upper() in letters:
+            return letters.index(m.group(1).upper())
         # 2) a parenthesized or punctuated standalone letter, prefer the last
         cands = re.findall(r"(?:^|[^A-Za-z])\(?([A-Z])\)?(?:[.):、]|\b)", t)
         cands = [c.upper() for c in cands if c.upper() in letters]
@@ -479,19 +487,21 @@ class HFMCQAdapter(DatasetAdapter):
         # Strip <think>…</think> blocks: thinking traces accumulate every letter
         # mentioned, flooding the multi-letter extraction with false positives.
         t = re.sub(r"<think>.*?</think>", "", text or "", flags=re.DOTALL).strip() or text or ""
-        # 0) Priority: structured "Answer: BC" final-answer line (CoT output format).
-        #    Use LAST match so CoT backtracking resolves correctly.
-        #    [A-Z]+ captures only uppercase option letters; (?![A-Za-z]) prevents
-        #    partial matches into words (e.g. "Answer: Because..." does not fire).
-        m0s = list(re.finditer(
-            r"(?:[Aa]nswer|答案)\s*[:：]\s*([A-Z]+)(?![A-Za-z])",
-            t,
-        ))
+        # 0) Priority: the structured "Answer: …" final-answer line (CoT output
+        #    format). Capture the WHOLE line after the marker (LAST such line) and
+        #    pull every in-range option letter from it — handles "BC", "B C",
+        #    "B, C and D". Letter extraction is case-SENSITIVE (uppercase rng only)
+        #    so prose like "Answer: Because…" contributes nothing.
+        m0s = list(re.finditer(r"(?:answer|答案)\s*[:：]\s*([^\n\r]+)", t, re.IGNORECASE))
         if m0s:
-            run = m0s[-1].group(1)
-            idxs = sorted({letters.index(c) for c in run if c in letters})
-            if idxs:
-                return idxs
+            line = m0s[-1].group(1)
+            picks0: set[int] = set()
+            for run in re.findall(rf"(?<![A-Za-z])([{rng}]{{2,}})(?![A-Za-z])", line):
+                picks0.update(letters.index(c) for c in run)
+            for c in re.findall(rf"(?<![A-Za-z])([{rng}])(?![A-Za-z])", line):
+                picks0.add(letters.index(c))
+            if picks0:
+                return sorted(picks0)
         picks: set[int] = set()
         # 1) contiguous runs of >=2 option letters, e.g. "BCDE"
         for run in re.findall(rf"(?<![A-Za-z])([{rng}]{{2,}})(?![A-Za-z])", t):

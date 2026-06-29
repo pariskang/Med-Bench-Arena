@@ -8,7 +8,9 @@ run:
   concurrency: 16
   cache: true
 eval:
-  gen: {temperature: 0.0, max_tokens: 1024}
+  # 2048: CoT MCQ reasoning + long open-ended/judged generations (MedRBench
+  # diagnosis, MedCalc work-shown) truncated at 1024, scoring correct answers 0.
+  gen: {temperature: 0.0, max_tokens: 2048}
   judge_model: mock-judge
 models:
   - {id: mock-model, type: mock, behavior: auto}
