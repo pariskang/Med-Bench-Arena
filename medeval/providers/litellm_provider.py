@@ -61,7 +61,13 @@ class LiteLLMProvider(ModelProvider):
             kwargs["api_base"] = self.api_base
         if self._key:
             kwargs["api_key"] = self._key
-        for k in ("temperature", "max_tokens", "top_p", "stop", "seed"):
+        # Forward the common sampling params. repetition/frequency/presence penalties
+        # and top_k were previously dropped here but applied on the HF backend, so the
+        # SAME config decoded differently across providers in one sweep. litellm has
+        # drop_params=True (set in _lib), so any param a given provider rejects is
+        # silently ignored rather than erroring.
+        for k in ("temperature", "max_tokens", "top_p", "top_k", "stop", "seed",
+                  "frequency_penalty", "presence_penalty", "repetition_penalty", "min_p"):
             if k in gen and gen[k] is not None:
                 kwargs[k] = gen[k]
 

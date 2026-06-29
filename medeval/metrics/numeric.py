@@ -11,10 +11,15 @@ from typing import Any
 from ..schema import Prediction, Sample, Score
 from .base import Metric, register_metric
 
-_NUM = re.compile(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+\.\d+|-?\.\d+|-?\d+")
-# an explicit final answer marker, e.g. "answer is 12.5", "= 12.5", "答案：12.5"
+_EXP = r"(?:[eE][-+]?\d+)?"   # optional scientific-notation exponent
+_NUM = re.compile(
+    rf"-?\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?{_EXP}|-?\d+\.\d+{_EXP}|-?\.\d+{_EXP}|-?\d+{_EXP}")
+# the labeled final-answer line the MedCalc prompt_template asks for: "Answer: 12.5"
+_ANSWER_LINE = re.compile(
+    r"(?im)^\s*(?:final answer|answer|最终答案|答案)\s*[:：=]\s*([-+\d.,eE]+)")
+# a looser final-answer marker, e.g. "answer is 12.5", "= 12.5", "结果为 12.5"
 _ANSWER = re.compile(
-    r"(?:answer|result|final|总分|得分|答案|结果)\s*(?:is|are|:|：|=|为|是)?\s*([-\d.,]+)",
+    r"(?:answer|result|final|总分|得分|答案|结果)\s*(?:is|are|:|：|=|为|是)?\s*([-+\d.,eE]+)",
     re.IGNORECASE)
 
 
@@ -35,12 +40,23 @@ def _numbers(text: str) -> list[float]:
 
 
 def _pred_number(text: str) -> float | None:
-    m = _ANSWER.search(text or "")
-    if m:
-        v = _to_float(m.group(1))
+    t = text or ""
+    # 1) the labeled "Answer: <number>" line the prompt requests — LAST such line
+    #    (a CoT trace may show intermediate "result = 80" before the final answer).
+    lines = list(_ANSWER_LINE.finditer(t))
+    if lines:
+        v = _to_float(lines[-1].group(1))
         if v is not None:
             return v
-    nums = _numbers(text)
+    # 2) a looser final-answer marker — LAST occurrence, not the first (search()
+    #    used to grab "result = 80" from the working and ignore the real answer).
+    ms = list(_ANSWER.finditer(t))
+    if ms:
+        v = _to_float(ms[-1].group(1))
+        if v is not None:
+            return v
+    # 3) fall back to the last number anywhere
+    nums = _numbers(t)
     return nums[-1] if nums else None   # models usually end with the final value
 
 

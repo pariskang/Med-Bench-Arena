@@ -16,7 +16,8 @@ run:
   cache: true
 
 eval:
-  gen: {temperature: 0.0, max_tokens: 1024}
+  # 2048: CoT MCQ + long open-ended ethics dilemmas / safety reasoning truncated at 1024.
+  gen: {temperature: 0.0, max_tokens: 2048}
   judge_model: mock-judge        # real: gpt-4.1 / deepseek-r1 (judge_only) — see example_open_safety.yaml
 
 models:

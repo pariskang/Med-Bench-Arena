@@ -13,9 +13,12 @@ run:
   cache: true
 
 eval:
-  # 1024 tokens: enough headroom for reasoning models' <think> blocks on MCQ
-  # (512 was too tight and caused answer truncation for DeepSeek-R1 / HuatuoGPT-o1).
-  gen: {temperature: 0.0, max_tokens: 1024}
+  # 2048 tokens: the default MCQ instruction is now zero-shot CoT ("Think step by
+  # step, then ... Answer: X"), so the model emits a reasoning trace *before* the
+  # answer line. 1024 truncated that trace on hard / many-option sets (MedXpertQA
+  # A–J, multi-answer CMB) — the "Answer:" line never appeared and the item scored
+  # 0. Reasoning models' <think> blocks need the headroom too.
+  gen: {temperature: 0.0, max_tokens: 2048}
 
 models:
   - {id: mock-model, type: mock, behavior: auto}

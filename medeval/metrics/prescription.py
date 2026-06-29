@@ -21,11 +21,20 @@ from ..schema import Prediction, Sample, Score
 from .base import Metric, register_metric
 from .text_match import tokenize, _overlap, prf
 
-_SEP = re.compile(r"[、,，;；/\|、\s]+|和(?=\S)|与|及|加|配")
+# Separators between herbs. NOTE: 加 / 配 were removed — they split *inside*
+# common phrases (加减, 配伍) and inside herb names, manufacturing phantom tokens.
+_SEP = re.compile(r"[、,，;；/\|\s]+|和(?=\S)|与|及")
 _DOSE = re.compile(r"\d+\.?\d*\s*(?:g|kg|mg|ml|克|毫升|钱|两|分|片|枚|条|根|个|只|对|粒)?", re.I)
 _PAREN = re.compile(r"[（(【\[][^）)】\]]*[)）】\]]")
 _HERB_SECTION = re.compile(r"(?:药物组成|药物|组成|方药|处方|用药|方剂组成)\s*[:：]?\s*(.+)", re.S)
 _CJK = re.compile(r"[一-鿿]")
+# Preparation / instruction words that are NOT herbs but ride along in a 药物组成
+# string ("…水煎服", "加减", "每日一剂"). Dropped so they don't dilute herb-set F1.
+_NON_HERB = {
+    "水煎服", "水煎", "煎服", "顿服", "温服", "分服", "冲服", "代茶饮", "加减",
+    "随证加减", "上药", "每日一剂", "日一剂", "一剂", "适量", "若", "等",
+    "共研细末", "研末", "为末", "若干", "克", "用法", "用量",
+}
 
 
 def _norm_herb(h: str) -> str:
@@ -39,7 +48,9 @@ def _split_herbs(text: str) -> set[str]:
     out = set()
     for tok in _SEP.split(text or ""):
         h = _norm_herb(tok)
-        if h and _CJK.search(h) and 1 <= len(h) <= 8:
+        # require ≥2 CJK chars (single chars are almost always fragments) and skip
+        # known non-herb preparation words.
+        if h and _CJK.search(h) and 2 <= len(h) <= 8 and h not in _NON_HERB:
             out.add(h)
     return out
 

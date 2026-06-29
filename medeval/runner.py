@@ -7,6 +7,7 @@ K metrics`` grid. Generations are cached on disk keyed by
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 from dataclasses import asdict
@@ -221,9 +222,18 @@ class Runner:
 
     # --- caching ----------------------------------------------------------
     def _cache_path(self, prov: ModelProvider, ds) -> Path:
-        sig = json.dumps({"gen": self.gen_defaults, "model": getattr(prov, "model", prov.id)},
+        # Key the cache on the EFFECTIVE gen params (run defaults + per-model
+        # gen_overrides). Keying on gen_defaults alone meant editing a model's
+        # `gen:` block (e.g. temperature) silently reused stale cached generations.
+        merged = (prov._merge_gen(self.gen_defaults)
+                  if hasattr(prov, "_merge_gen") else self.gen_defaults)
+        sig = json.dumps({"gen": merged, "model": getattr(prov, "model", prov.id)},
                          sort_keys=True)
-        h = abs(hash(sig)) % (10 ** 10)
+        # hashlib, NOT the builtin hash(): hash() of a str is salted per process
+        # via PYTHONHASHSEED, so it returns a different value every launch — the
+        # cache filename would change on each run and resume would never find the
+        # prior cache (the whole checkpoint-resume feature would be silently dead).
+        h = hashlib.sha1(sig.encode("utf-8")).hexdigest()[:12]
         return self.cache_dir / f"{_safe(ds.id)}__{_safe(prov.id)}__{h}{self.shard_suffix}.jsonl"
 
     def _load_cache(self, path: Path) -> dict[str, Prediction]:
@@ -233,7 +243,13 @@ class Runner:
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            d = json.loads(line)
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                # A crash mid-write (or a non-atomic Drive/FUSE flush) can leave a
+                # truncated final JSONL line — skip it rather than poisoning the
+                # whole resumable cache.
+                continue
             out[d["sample_id"]] = Prediction(
                 sample_id=d["sample_id"], generation=_gen_from_dict(d["generation"]),
                 parsed=d.get("parsed"), rollouts=d.get("rollouts"),
@@ -380,6 +396,10 @@ class Runner:
                     "cost_usd": p.generation.cost_usd,
                     "prompt_tokens": p.generation.prompt_tokens,
                     "completion_tokens": p.generation.completion_tokens,
+                    # surface length-capped generations: a CoT trace that runs past
+                    # max_tokens never emits its "Answer:" line and scores 0 — this
+                    # flag lets you spot a truncation-driven accuracy drop in review.
+                    "truncated": p.generation.finish_reason == "length",
                     "scores": {name: {"value": sc[i].value, "detail": sc[i].detail}
                                for name, sc in scores_by_metric.items()},
                 }

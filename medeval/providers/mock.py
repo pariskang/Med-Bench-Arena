@@ -79,9 +79,12 @@ class MockProvider(ModelProvider):
             if low.count("please tell me") < 1:   # count our own prior questions in the history
                 return "Please tell me the main symptoms, history, and any key findings."
             return f"ANSWER: {letters[_hash_int(prompt) % len(letters)]}"
-        if letters and ("correct option" in low or "letter" in low or "answer with" in low):
+        # Any lettered-option prompt is MCQ by this point (judge / agent / MediQ
+        # were handled above). Reply in the CoT "Answer: X" form the new default
+        # instruction requests, so the parser's anchored lane is exercised offline.
+        if letters:
             pick = letters[_hash_int(prompt) % len(letters)]
-            return f"The answer is {pick}."
+            return f"Step by step, the answer is {pick}.\nAnswer: {pick}"
         # open-ended: deterministic short clinical-ish stub
         return (
             "Based on the presentation, the most appropriate response addresses "

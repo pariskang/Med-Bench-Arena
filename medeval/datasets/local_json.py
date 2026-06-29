@@ -46,6 +46,19 @@ def _get_path(obj: Any, path: str) -> Any:
     return cur
 
 
+def _safe_format(tmpl: str, **kw: Any) -> str:
+    """Substitute only the known ``{name}`` placeholders by literal replacement.
+
+    Deliberately NOT ``str.format``: a template may contain literal braces (a JSON
+    example like ``{"x": 1}``) or unknown placeholders, both of which crash or
+    mangle ``str.format``/``format_map``. Targeted replacement leaves everything
+    else untouched."""
+    out = tmpl
+    for k, v in kw.items():
+        out = out.replace("{" + k + "}", str(v))
+    return out
+
+
 def _stringify(value: Any) -> str:
     if value is None:
         return ""
@@ -83,6 +96,11 @@ class LocalJSONAdapter(DatasetAdapter):
         self.image_zip = config.get("image_zip")   # auto download+unzip images archive
         self.image_strip = config.get("image_strip", "")
         self.prompt_template = config.get("prompt_template")
+        # optional trailing task instruction (parallel to hf_mcq's). Open-ended /
+        # SDT / safety prompts otherwise ship NO output guidance, so the model is
+        # judged on rubric dimensions it was never asked to address. Off by default
+        # (set per-dataset in config; keep safety over-refusal probes neutral).
+        self.instruction = config.get("instruction")
         if not self.metric_specs:
             self.metric_specs = [("llm_judge", {})]
             self.metrics = ["llm_judge"]
@@ -250,7 +268,9 @@ class LocalJSONAdapter(DatasetAdapter):
         else:
             text = _stringify(raw_prompt)
             if self.prompt_template:
-                text = self.prompt_template.format(prompt=text)
+                text = _safe_format(self.prompt_template, prompt=text)
+            elif self.instruction:
+                text = f"{text}\n\n{self.instruction}"
             msgs.append(Message("user", text))
         # multimodal: attach images (open VQA) to the last user turn
         imgs = encode_images(self._resolve(self.fm.get("image"), root, item),
