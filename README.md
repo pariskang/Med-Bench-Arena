@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-12%2F12%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-13%2F13%20passing-brightgreen.svg)](tests/)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-40%2B%20live--verified-8A2BE2.svg)](DATASETS.md)
 [![TCM](https://img.shields.io/badge/中医-first--class-c1272d.svg)](#-traditional-chinese-medicine-中医)
 [![Ethics & Safety](https://img.shields.io/badge/伦理·安全-first--class-2E8B57.svg)](configs/catalog_ethics_safety.yaml)
@@ -67,7 +67,7 @@ Three tensions drive the design (and the dataset choices):
 
 ```
 Config (YAML)         declarative run spec: models / datasets / eval
-Runner                schedule · concurrency · cache · resume · leaderboard
+Runner                schedule · concurrency · cache · checkpoint-resume · live progress · leaderboard
  ├ DatasetAdapter     load() -> Sample ;  parse(text) -> Prediction
  ├ ModelProvider      agenerate() ; HF overrides agenerate_many = vLLM batch
  └ Metric             score() ; aggregate()
@@ -132,7 +132,7 @@ medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 
 ## 🔬 Reliability & reproducibility
 
-MCQ evaluation is only trustworthy if the data is exactly what you think it is. Four guards:
+MCQ evaluation is only trustworthy if the data is exactly what you think it is — and a full run is only practical if it survives an interruption. Five guards:
 
 - **Pinned revisions** — every headline MCQ benchmark is locked to an immutable commit, so the eval set can never silently change. HF repos use `revision: <sha>` (passed to `load_dataset`); raw-file sources embed the commit in the URL (`…/resolve/<sha>/…`, `raw.githubusercontent/…/<sha>/…`). Large pinned files download via an atomic, **HTTP-Range-resuming** fetcher — robust to proxies that truncate big responses, and a failed download never poisons the cache.
 - **`preflight`** — profile every dataset *without a model*: sample count, option-count distribution, **answer-parse success rate**, and the first few examples. Run it before you spend a single token:
@@ -153,6 +153,7 @@ A parse rate below 100% means rows are being dropped (a mis-mapped `field_map`, 
 
 - **Comparability tiers (`split_type`)** — every result row carries a `split_type` so *officially-comparable* runs never get mixed with internal ones on the leaderboard. The leaderboard renders **✅ Official** and **⚠️ Internal / non-comparable** as separate sections. Values: `official` · `validation` · `demo` · `sample` · `gated` · `approximated`. So **CMB-val** (validation), **TCMBench-demo** (demo), **CSEDB-sample** (sample), and **MedAgentBench's built-in grader** (approximated, unless you supply the official `refsol_path`) are clearly fenced off from a full official run.
 - **Automated on every web session + CI** — a `SessionStart` hook (`.claude/`) installs deps and runs `preflight --strict` so each Claude-Code-on-the-web session profiles the eval set up front; GitHub Actions (`.github/workflows/ci.yml`) runs the offline test suite **and** `preflight --strict` as a data gate on every push/PR.
+- **Deterministic, resumable runs** — every `(model, dataset)` generation is cached on disk keyed by a **stable** hash of the model + its *effective* sampling params (`hashlib`, never the per-process-salted builtin `hash()`), so an interrupted full-dataset run (Colab timeout, spot preemption) **resumes from the last checkpoint** instead of regenerating from scratch. Progress shows **live** per-dataset bars (`tqdm`), generations are flushed to disk in batches of `checkpoint_every` (default 64 — friendly to Google Drive / network mounts), the leaderboard is rewritten after each dataset, and a crash-truncated cache line is skipped rather than poisoning the resume.
 
 ---
 
@@ -223,7 +224,7 @@ python -m medeval run configs/catalog_med_models.yaml --models biancang        -
 
 Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baichuan / Taiyi / DISC / AquilaMed** need `trust_remote_code`; **Meditron / MedGemma** are gated (accept the license + `huggingface-cli login`); reasoning models (**DeepSeek-R1 / HuatuoGPT-o1 / Baichuan-M2 / ClinicalGPT-R1**) get a larger `max_tokens`; and a vLLM load failure falls back to transformers instead of crashing. *(Qibo and the Qilin-Med text model aren't publicly on HF — documented in [`MODELS.md`](MODELS.md).)*
 
-▶️ **One-click GPU run** — open the notebook straight in Google Colab (no local setup; clone · install vLLM · pick a model · **sweep every benchmark, every question** · save all results to **Google Drive**). The notebook's `LIMIT = 0` default scores the *full* set of each dataset; set `LIMIT = 50` for a quick smoke test:
+▶️ **One-click GPU run** — open the notebook straight in Google Colab (no local setup; clone · install vLLM · pick a model · **sweep every benchmark, every question** · save all results to **Google Drive**). The notebook's `LIMIT = 0` default scores the *full* set of each dataset (set `LIMIT = 50` for a quick smoke test). A full sweep shows **live per-dataset progress**, **flushes results to Drive** every checkpoint, and **resumes where it left off** if the Colab session disconnects — just re-run the cell:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 
@@ -236,11 +237,11 @@ Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baic
 <details>
 <summary><b>All 12 metrics in detail</b></summary>
 
-- **`mcq_accuracy`** — robust letter/index/text extraction; single **and** multi-answer.
-- **`pass_k`** — *k* independent rollouts must *all* succeed (reports pass@1 too).
-- **`llm_judge`** — the judge is *just a provider*. Rubric resolves from the dataset (HealthBench points, CSEDB 分数, LLMEval checklist) or a per-task default (open_qa / **sdt 证型链** / **prescription 方剂** / **safety 安全**). Signed points honored; `per_criterion: true` runs the **faithful HealthBench algorithm** (one call per item, boolean `criteria_met`, signed-met / positive-points).
+- **`mcq_accuracy`** — **zero-shot CoT** prompting by default (reason step-by-step → `Answer: X`), with a structured-line-first, last-match-wins parser that ignores distractors mentioned in the reasoning and strips `<think>` traces. Robust letter/index/text extraction; single **and** multi-answer.
+- **`pass_k`** — *k* independent rollouts must *all* succeed (reports pass@1 too). Reasoning-model `<think>` traces are stripped before agent action parsing.
+- **`llm_judge`** — the judge is *just a provider*. Rubric resolves from the dataset (HealthBench points, CSEDB 分数, LLMEval checklist) or a per-task default (open_qa / **sdt 证型链** / **prescription 方剂** / **safety 安全**). Explicit 0/0.5/1 scoring anchors; malformed judge JSON is recovered through a **`json-repair`** pipeline; criterion keys are matched by id/text/position (never a silent 0). Signed points honored — a **negative-point** rubric is always routed through the per-criterion path so penalties keep the right sign; `per_criterion: true` runs the **faithful HealthBench algorithm** (one call per item, boolean `criteria_met`, signed-met / positive-points).
 - **`f1` / `rouge` / `bleu`** — token overlap vs. a reference; **CJK-aware** tokenization (char-level Chinese, word-level Latin, `jieba` if installed).
-- **`numeric_match`** — calculation tasks (MedCalc-Bench): final number within tolerance / `[lower, upper]` range.
+- **`numeric_match`** — calculation tasks (MedCalc-Bench): extracts the labeled `Answer: <number>` line (then a last-match marker, scientific notation supported) and checks it within tolerance / `[lower, upper]` range.
 - **`prescription_match`** — **方剂结构匹配**: herb-set P/R/F1 (君臣佐使) + formula-name + 治法 overlap, from the structured gold.
 - **`syndrome_chain`** — **证型链结构分**: scores 症状→病机→证型 with **同病异治 partial credit**.
 - **`meridian_acupoint`** — **经络腧穴**: set-F1 over 12 正经 + 奇经 and acupoints, with alias normalization.
@@ -395,7 +396,7 @@ medeval/
 └── cli.py                     # python -m medeval run|preflight|list|export|merge|pool|slurm|kg|fetch
 configs/                       # declarative, live-verified run specs (incl. catalog_med_models.yaml)
 notebooks/                     # Colab runner for the medical / TCM model catalog
-tests/                         # 12 offline suites (no keys / GPU / network)
+tests/                         # 13 offline suites (no keys / GPU / network)
 DATASETS.md                    # per-dataset access notes, caveats, field maps
 MODELS.md                      # the 18-model catalog: verified repo ids, archs, gating, quirks
 ```
@@ -422,7 +423,7 @@ If Med-Bench-Arena helps your research, please cite it:
 Contributions are welcome! Adding a benchmark is usually **config-only** (see `DATASETS.md` for the field-map vocabulary). For a new adapter/metric/backend, register it with the decorator above and add a test under `tests/`. Please run the offline suite before opening a PR:
 
 ```bash
-for t in tests/test_*.py; do python "$t"; done      # all 12 should print OK
+for t in tests/test_*.py; do python "$t"; done      # all 13 should print OK
 ```
 
 ---

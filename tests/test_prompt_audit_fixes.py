@@ -215,3 +215,11 @@ def test_prescription_drops_prep_words():
     herbs = _split_herbs("黄芪、当归、白术，加减；水煎服")
     assert {"黄芪", "当归", "白术"} <= herbs
     assert "加减" not in herbs and "水煎服" not in herbs
+
+
+if __name__ == "__main__":
+    for _name, _fn in sorted(globals().items()):
+        if _name.startswith("test_") and callable(_fn):
+            _fn()
+            print("ok", _name)
+    print("OK: all prompt-audit fixes verified")
