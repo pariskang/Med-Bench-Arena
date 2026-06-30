@@ -229,6 +229,34 @@ python -m medeval run configs/catalog_med_models.yaml --models biancang        -
 
 ---
 
+## 🧪 Prompt 测试形式
+
+`hf_mcq` 适配器通过 `prompt_format:` 支持四种测试模式：
+
+| 模式 | 是否附加指令 | 是否预置示例 | 适用场景 |
+|---|---|---|---|
+| `zero_shot` | ✗ | 可选 | 纯零样本基准测试 |
+| `zero_shot_cot` | ✓ "逐步推理…" | 可选 | **默认**；结构化 `Answer:` 行解析 |
+| `few_shot` | ✗ | 必填 | 无 CoT 的上下文学习 |
+| `few_shot_cot` | ✓ | 必填（含 `explanation`） | 带推理链的上下文学习 |
+
+```yaml
+# 少样本 CoT 示例
+- id: medqa_5shot_cot
+  adapter: hf_mcq
+  prompt_format: few_shot_cot
+  few_shot_examples:
+    - question: "28 岁女性，乏力、面色苍白，Hgb 8 g/dL，MCV 72 fL，铁蛋白低"
+      options: {A: 缺铁性贫血, B: 维生素B12缺乏, C: 叶酸缺乏}
+      answer: A
+      explanation: "MCV 低 + 铁蛋白低 → 缺铁性小细胞贫血。"
+  metrics: [mcq_accuracy]
+```
+
+`local_json` 的开放式任务可配置 `few_shot_examples: [{prompt, answer}, …]`，每个示例被渲染为上下文中交替的 **user/assistant** 对话轮次，位于实际问题之前。详见 [`configs/example_prompt_formats.yaml`](configs/example_prompt_formats.yaml)。
+
+---
+
 ## 📐 指标与评审
 
 `mcq_accuracy` · `pass_k` · `llm_judge` · `f1` · `rouge` · `bleu` · `numeric_match`，外加**五种结构化中医指标**。

@@ -1,0 +1,139 @@
+# Prompt-format testing: zero-shot · zero-shot CoT · few-shot · few-shot CoT
+#
+# Demonstrates all four ``prompt_format`` modes supported by the ``hf_mcq`` adapter
+# and the ``few_shot_examples`` feature for both ``hf_mcq`` and ``local_json``.
+#
+# Run offline (no GPU, no API key — downloads real datasets):
+#   python -m medeval run configs/example_prompt_formats.yaml --limit 5
+#
+# The mock provider answers randomly, so accuracy figures are meaningless here;
+# what you are checking is that each prompt renders and parses correctly.
+
+run:
+  output_dir: ./results/prompt_formats
+  concurrency: 8
+  cache: false
+
+eval:
+  gen: {temperature: 0.0, max_tokens: 2048}
+  judge_model: mock-judge
+
+models:
+  - {id: mock-model, type: mock, behavior: auto}
+  - {id: mock-judge, type: mock, behavior: auto, judge_only: true}
+
+datasets:
+
+  # ── MCQ: mode 1 — zero_shot ──────────────────────────────────────────────
+  # Bare question + options, NO "Think step by step" instruction.
+  # Useful when benchmarking models that handle instruction-free input
+  # or when you want to measure raw pattern-matching ability.
+  - id: medqa_zero_shot
+    adapter: hf_mcq
+    path: GBaker/MedQA-USMLE-4-options
+    revision: 0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18
+    split: test
+    field_map: {question: question, options: options, answer: answer_idx}
+    answer_format: letter
+    prompt_format: zero_shot          # no instruction; raw letter extraction
+    metrics: [mcq_accuracy]
+
+  # ── MCQ: mode 2 — zero_shot_cot (DEFAULT) ────────────────────────────────
+  # "Think step by step, then state your final answer as: Answer: A"
+  # The structured Answer-line parser takes priority; last-match-wins for
+  # self-correcting chains; <think> traces are stripped before parsing.
+  - id: medqa_zero_shot_cot
+    adapter: hf_mcq
+    path: GBaker/MedQA-USMLE-4-options
+    revision: 0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18
+    split: test
+    field_map: {question: question, options: options, answer: answer_idx}
+    answer_format: letter
+    prompt_format: zero_shot_cot      # default; omitting prompt_format is equivalent
+    metrics: [mcq_accuracy]
+
+  # ── MCQ: mode 3 — few_shot ───────────────────────────────────────────────
+  # Examples prepended inline (each shows "Answer: X" at the end), then the
+  # actual question WITHOUT a CoT instruction.  The examples themselves teach
+  # the model the expected output format.
+  - id: medqa_few_shot
+    adapter: hf_mcq
+    path: GBaker/MedQA-USMLE-4-options
+    revision: 0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18
+    split: test
+    field_map: {question: question, options: options, answer: answer_idx}
+    answer_format: letter
+    prompt_format: few_shot
+    few_shot_examples:
+      - question: >
+          A 28-year-old woman presents with fatigue and pallor.
+          Labs show Hgb 8 g/dL, MCV 72 fL, and low serum ferritin.
+        options:
+          A: Iron deficiency anemia
+          B: Vitamin B12 deficiency
+          C: Folate deficiency
+          D: Aplastic anemia
+        answer: A
+      - question: >
+          A 55-year-old male smoker presents with haemoptysis and a
+          3-cm spiculated lung mass on CT.
+        options:
+          A: Sarcoidosis
+          B: Squamous cell carcinoma
+          C: Small cell carcinoma
+          D: Pulmonary embolism
+        answer: B
+    metrics: [mcq_accuracy]
+
+  # ── MCQ: mode 4 — few_shot_cot ───────────────────────────────────────────
+  # Examples show full step-by-step reasoning (from the "explanation" key)
+  # followed by "Answer: X"; the actual question also ends with the CoT
+  # instruction so the model knows to reproduce the same reasoning style.
+  - id: medqa_few_shot_cot
+    adapter: hf_mcq
+    path: GBaker/MedQA-USMLE-4-options
+    revision: 0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18
+    split: test
+    field_map: {question: question, options: options, answer: answer_idx}
+    answer_format: letter
+    prompt_format: few_shot_cot
+    few_shot_examples:
+      - question: >
+          A 28-year-old woman presents with fatigue and pallor.
+          Labs show Hgb 8 g/dL, MCV 72 fL, and low serum ferritin.
+        options:
+          A: Iron deficiency anemia
+          B: Vitamin B12 deficiency
+          C: Folate deficiency
+          D: Aplastic anemia
+        answer: A
+        explanation: |
+          The MCV of 72 fL is microcytic (normal 80–100). Microcytic anaemia
+          with low serum ferritin strongly indicates depleted iron stores.
+          B12 and folate deficiencies cause macrocytic (high MCV) anaemia.
+          Aplastic anaemia presents with pancytopenia, not isolated anaemia.
+          Therefore the diagnosis is iron deficiency anaemia.
+    metrics: [mcq_accuracy]
+
+  # ── Open-ended: few-shot via interleaved chat turns ───────────────────────
+  # For local_json tasks (open_qa / sdt / prescription / safety), few-shot
+  # examples become alternating user/assistant turns BEFORE the actual
+  # question.  Set ``instruction`` to guide the model's output format.
+  - id: demo_open_qa_few_shot
+    adapter: local_json
+    task: open_qa
+    path: data/samples/demo_open_qa.jsonl
+    field_map: {prompt: question, rubric: rubric, reference: reference}
+    instruction: "Answer concisely in 2–3 sentences, citing relevant clinical evidence."
+    few_shot_examples:
+      - prompt: "What is the first-line treatment for community-acquired pneumonia in outpatients?"
+        answer: >
+          First-line treatment is amoxicillin 500 mg three times daily for 5 days
+          (NICE 2019). Atypical cover (doxycycline or a macrolide) is added when
+          Mycoplasma or Chlamydia is suspected.
+      - prompt: "Which anticoagulant is preferred for stroke prevention in non-valvular atrial fibrillation?"
+        answer: >
+          Direct oral anticoagulants (DOACs) — apixaban, rivaroxaban, edoxaban,
+          or dabigatran — are preferred over warfarin (2023 ESC/AHA guidelines)
+          due to lower intracranial bleeding risk and no routine INR monitoring.
+    metrics: [llm_judge]

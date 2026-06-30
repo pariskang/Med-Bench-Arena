@@ -101,6 +101,12 @@ class LocalJSONAdapter(DatasetAdapter):
         # judged on rubric dimensions it was never asked to address. Off by default
         # (set per-dataset in config; keep safety over-refusal probes neutral).
         self.instruction = config.get("instruction")
+        # Few-shot example dicts: {prompt, answer}. When provided, each example is
+        # rendered as an interleaved user/assistant turn BEFORE the actual question,
+        # giving the model in-context demonstrations of the expected output format.
+        # The instruction (if any) is appended only to the final actual question, not
+        # to the example questions, so the examples demonstrate format without redundancy.
+        self.few_shot_examples: list[dict] = list(config.get("few_shot_examples") or [])
         if not self.metric_specs:
             self.metric_specs = [("llm_judge", {})]
             self.metrics = ["llm_judge"]
@@ -258,6 +264,18 @@ class LocalJSONAdapter(DatasetAdapter):
         msgs: list[Message] = []
         if self.system_prompt:
             msgs.append(Message("system", self.system_prompt))
+        # Few-shot examples: each becomes an interleaved user/assistant turn placed
+        # before the actual question so the model sees concrete demonstrations.
+        # The instruction is NOT appended to example questions (only to the final one).
+        for ex in self.few_shot_examples:
+            ex_q = str(ex.get("prompt", "")).strip()
+            ex_a = str(ex.get("answer", "")).strip()
+            if ex_q and ex_a:
+                ex_text = ex_q
+                if self.prompt_template:
+                    ex_text = _safe_format(self.prompt_template, prompt=ex_text)
+                msgs.append(Message("user", ex_text))
+                msgs.append(Message("assistant", ex_a))
         # chat-style prompt (HealthBench): list of {role, content}
         if isinstance(raw_prompt, list) and raw_prompt and isinstance(raw_prompt[0], dict):
             for m in raw_prompt:

@@ -230,6 +230,37 @@ Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baic
 
 ---
 
+## 🧪 Prompt testing formats
+
+Four modes are supported for MCQ datasets (`hf_mcq` adapter) via the `prompt_format:` key:
+
+| Mode | Instruction appended? | Few-shot examples? | Use case |
+|---|---|---|---|
+| `zero_shot` | ✗ | optional | raw pattern-matching baselines |
+| `zero_shot_cot` | ✓ "Think step by step…" | optional | **default**; structured `Answer:` line parsing |
+| `few_shot` | ✗ | required | in-context learning without CoT |
+| `few_shot_cot` | ✓ | required (with `explanation`) | in-context learning with CoT reasoning traces |
+
+```yaml
+# Few-shot CoT example
+- id: medqa_5shot_cot
+  adapter: hf_mcq
+  path: GBaker/MedQA-USMLE-4-options
+  field_map: {question: question, options: options, answer: answer_idx}
+  answer_format: letter
+  prompt_format: few_shot_cot
+  few_shot_examples:
+    - question: "A 28-year-old woman presents with fatigue…"
+      options: {A: "Iron deficiency", B: "B12 deficiency", C: "Folate deficiency"}
+      answer: A
+      explanation: "Low MCV + low ferritin → microcytic iron-deficiency anaemia."
+  metrics: [mcq_accuracy]
+```
+
+For open-ended tasks (`local_json`), set `few_shot_examples: [{prompt, answer}, …]`. Each example becomes an interleaved **user / assistant** turn before the actual question — the instruction (if any) is appended only to the final question, never to example questions. See [`configs/example_prompt_formats.yaml`](configs/example_prompt_formats.yaml) for a runnable demo of all four modes plus the open-ended few-shot pattern.
+
+---
+
 ## 📐 Metrics & judge
 
 `mcq_accuracy` · `pass_k` · `llm_judge` · `f1` · `rouge` · `bleu` · `numeric_match` · plus **five structured TCM metrics**.

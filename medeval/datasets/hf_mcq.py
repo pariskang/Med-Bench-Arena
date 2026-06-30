@@ -74,6 +74,15 @@ class HFMCQAdapter(DatasetAdapter):
         self.shuffle_options = bool(config.get("shuffle_options", False))
         self.system_prompt = config.get("system_prompt")
         self.prompt_template = config.get("prompt_template")
+        # prompt_format controls how the instruction and few-shot examples are combined:
+        #   zero_shot     – question + options only; no CoT instruction; no examples
+        #   zero_shot_cot – question + options + CoT instruction (DEFAULT, backward-compatible)
+        #   few_shot      – examples + question + options; no instruction at end
+        #   few_shot_cot  – examples (with reasoning) + question + options + CoT instruction
+        self.prompt_format = config.get("prompt_format", "zero_shot_cot")
+        # Few-shot example dicts: {question, options/choices, answer, explanation?}
+        # Used when prompt_format is "few_shot" or "few_shot_cot".
+        self.few_shot_examples: list[dict] = list(config.get("few_shot_examples") or [])
         # Zero-shot CoT: ask the model to reason first, then commit to a structured
         # final-answer line. The parsers give this "Answer: X" line top priority (an
         # anchored lane, last-match-wins for self-correcting CoT), and fall back to a
@@ -415,14 +424,46 @@ class HFMCQAdapter(DatasetAdapter):
         from ..schema import encode_images
         return encode_images(val, self.image_base, self.image_strip)
 
+    def _build_few_shot_prefix(self) -> str:
+        """Format few-shot examples as an inline block placed before the actual question.
+
+        Each example renders as question + options + (optional CoT explanation) + Answer line.
+        The CoT explanation is included only when ``prompt_format == "few_shot_cot"`` and
+        the example dict carries an ``"explanation"`` key.
+        """
+        blocks: list[str] = []
+        for ex in self.few_shot_examples:
+            q = str(ex.get("question", "")).strip()
+            opts = ex.get("options", ex.get("choices", []))
+            ans = str(ex.get("answer", "")).strip().upper()
+            expl = str(ex.get("explanation", "")).strip()
+            if isinstance(opts, dict):
+                keys = sorted(opts.keys(), key=lambda k: k.upper())
+                opt_block = "\n".join(f"{k}. {opts[k]}" for k in keys)
+            elif isinstance(opts, (list, tuple)):
+                opt_block = "\n".join(f"{LETTERS[i]}. {c}" for i, c in enumerate(opts))
+            else:
+                opt_block = ""
+            block = f"{q}\n\n{opt_block}" if opt_block else q
+            if self.prompt_format == "few_shot_cot" and expl:
+                block += f"\n\n{expl}\nAnswer: {ans}"
+            else:
+                block += f"\n\nAnswer: {ans}"
+            blocks.append(block)
+        return "\n\n".join(blocks) + "\n\n"
+
     def _render(self, question: str, choices: list[str], context: str) -> str:
         opt_block = "\n".join(f"{LETTERS[i]}. {c}" for i, c in enumerate(choices))
+        prefix = self._build_few_shot_prefix() if self.few_shot_examples else ""
         if self.prompt_template:
-            return self.prompt_template.format(
+            return prefix + self.prompt_template.format(
                 question=question, options=opt_block, context=context
             )
         head = f"{context}\n\n" if context else ""
-        return f"{head}{question}\n\n{opt_block}\n\n{self.instruction}"
+        body = f"{head}{question}\n\n{opt_block}"
+        if self.prompt_format in ("zero_shot_cot", "few_shot_cot"):
+            return prefix + f"{body}\n\n{self.instruction}"
+        return prefix + body
 
     # --- parsing ----------------------------------------------------------
     def parse(self, sample: Sample, text: str) -> Prediction:
