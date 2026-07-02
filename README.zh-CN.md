@@ -238,7 +238,7 @@ python -m medeval run configs/catalog_med_models.yaml --models biancang        -
 
 - **`mcq_accuracy`** —— 默认采用**零样本 CoT** 提示（逐步推理 → `Answer: X`），解析器**优先匹配结构化答案行、取最后一次命中**，从而忽略推理过程中提到的干扰项，并先剥离 `<think>` 推理痕迹。鲁棒的字母/序号/文本抽取；同时支持单选**与**多选。
 - **`pass_k`** —— *k* 次独立回合必须**全部**成功（同时报告 pass@1）。智能体动作解析前会先剥离推理模型的 `<think>` 痕迹。
-- **`llm_judge`** —— 评审就是一个普通的 provider。rubric 来自数据集（HealthBench 分值、CSEDB 分数、LLMEval 清单）或任务默认（open_qa / **辨证证型链** / **方剂** / **安全**）。采用明确的 0/0.5/1 评分锚点；评审输出的不规范 JSON 经 **`json-repair`** 流水线修复；评分按 id/文本/位置匹配（绝不会静默判 0）。带符号分值被尊重 —— 含**负分**的 rubric 一律走逐条路径，确保惩罚保持正确符号；`per_criterion: true` 运行 **忠实的 HealthBench 算法**（逐条一次调用，布尔 `criteria_met`，带符号得分 / 正分值）。
+- **`llm_judge`** —— 评审就是一个普通的 provider。rubric 来自数据集（HealthBench 分值、CSEDB 分数、LLMEval 清单）或任务默认（open_qa / **辨证证型链** / **方剂** / **安全**）。采用明确的 0/0.5/1 评分锚点；评审输出的不规范 JSON 经 **`json-repair`** 流水线修复；评分按 id/文本/归一化文本/位置匹配（绝不会静默判 0）。评审重试后仍无法给出可解析结果时，该样本被**排除**（`value=None`，聚合中以 `judge_failures` 显示）而不是记 0 —— 评审自身的故障绝不算作模型的 0 分；key 部分匹配时未被评到的准则同样从分母中排除，而不是强制记 0。带符号分值被尊重 —— 含**负分**的 rubric 一律走逐条路径，确保惩罚保持正确符号；`per_criterion: true` 运行 **忠实的 HealthBench 算法**（逐条一次调用，布尔 `criteria_met`，带符号得分 / 正分值）。
 - **`f1` / `rouge` / `bleu`** —— 与参考答案的 token 重合；**中日韩感知**分词（中文按字、拉丁按词，装了 `jieba` 则用之）。
 - **`numeric_match`** —— 计算类任务（MedCalc-Bench）：优先抽取带标签的 `Answer: <number>` 行（其次为最后一次出现的标记，支持科学计数法），判断是否落入容差 / `[lower, upper]` 区间。
 - **`prescription_match`** —— **方剂结构匹配**：药味集合 P/R/F1（君臣佐使）+ 方名 + 治法重合，读自结构化标准答案。
@@ -246,6 +246,8 @@ python -m medeval run configs/catalog_med_models.yaml --models biancang        -
 - **`meridian_acupoint`** —— **经络腧穴**：对 12 正经 + 奇经及腧穴做集合 F1，含别名归一。
 - **`tongue_pulse`** —— **舌象/脉象**：按子句锚定，对舌（舌色/舌形/苔）与脉（脉）特征做集合 F1。
 - **`classics_ontology`** —— **古籍本体**：回答是否落到了正确的经典出处？集合 F1 + 最长匹配去重；别名取自知识图谱。
+
+> 结构化指标（方剂/证型链/经络腧穴/舌脉/古籍）遇到**参考答案中提取不到 gold** 的样本时，一律排除（`value=None`，聚合报告 `n_scored` / `skipped_no_gold`）而不是记 0 —— 无标可评不是模型的错。
 
 </details>
 

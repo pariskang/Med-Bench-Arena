@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
-from medeval import Generation, Message, Prediction, Sample, TaskType, create_metric
+from medeval import Generation, Message, Prediction, Sample, Score, TaskType, create_metric
 from medeval.datasets.base import _parse_metric_specs
 from medeval.providers.mock import MockProvider
 
@@ -99,10 +99,13 @@ def test_syndrome_chain_tongbing_yizhi_partial_credit():
     assert one.detail["syndrome_recall"] == 0.5       # 1 of 2 acceptable syndromes
     assert both.detail["syndrome_recall"] == 1.0
     assert both.value > one.value                      # more chain coverage scores higher
-    # no gold at all -> 0
+    # no gold at all -> excluded (None), never a hard 0 against the model
     empty = _score("syndrome_chain", Sample(id="e", task_type=TaskType.SDT,
                    messages=[Message("user", "q")], reference={}), _pred("anything"))
-    assert empty.value == 0.0
+    assert empty.value is None and empty.detail["skipped"] == "no_gold"
+    agg = create_metric("syndrome_chain").aggregate([both, empty])
+    assert agg["chain_score"] == both.value            # skipped sample excluded from mean
+    assert agg["n"] == 2 and agg["n_scored"] == 1 and agg["skipped_no_gold"] == 1
 
 
 def test_meridian_acupoint_extraction_and_aliases():
@@ -160,6 +163,116 @@ def test_healthbench_per_criterion_signed_points():
     assert abs(sc.value - 0.5) < 1e-9
     # aggregate clips the dataset mean into [0, 1]
     assert 0.0 <= m.aggregate([sc])["judge_score"] <= 1.0
+
+
+class _StubJudge:
+    """Judge stub that replays a fixed sequence of raw responses."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.id = "stub-judge"
+        self.calls = 0
+
+    async def agenerate(self, messages, **gen):
+        text = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return Generation(text=text)
+
+
+def _judged(judge_responses, reference=None, config=None):
+    m = create_metric("llm_judge", config or {})
+    m.judge = _StubJudge(judge_responses)
+    s = Sample(id="s", task_type=TaskType.OPEN_QA,
+               messages=[Message("user", "q")], reference=reference or {})
+    return m, asyncio.run(m.score(s, _pred("an answer"))), m.judge
+
+
+def test_llm_judge_failure_excluded_not_zero():
+    # unparseable judge output (even after the retry) -> value None + judge_failed,
+    # and the aggregate excludes it instead of folding a 0 into the mean.
+    m, bad, judge = _judged(["I cannot grade this.", "still not json"])
+    assert bad.value is None and bad.detail["judge_failed"] is True
+    assert judge.calls == 2                            # one retry before giving up
+    good = Score(metric="llm_judge", value=0.8, detail={})
+    agg = m.aggregate([good, bad])
+    assert agg["judge_score"] == 0.8                   # failure did NOT drag the mean
+    assert agg["n"] == 2 and agg["n_scored"] == 1 and agg["judge_failures"] == 1
+
+
+def test_llm_judge_retry_recovers():
+    # a transiently-garbled first response is retried and scored normally
+    ok_json = '{"scores": {"accuracy": 1.0, "completeness": 1.0, "safety": 1.0}}'
+    m, sc, judge = _judged(["garbage", ok_json])
+    assert judge.calls == 2 and sc.value == 1.0 and not sc.detail.get("judge_failed")
+
+
+def test_llm_judge_partial_key_match_excludes_unmatched():
+    # judge covers 1 of 3 default criteria and adds an extra key: the matched
+    # criterion scores; the 2 ungraded ones are excluded (not coerced to 0).
+    m, sc, _ = _judged(['{"scores": {"accuracy": 1.0, "overall": 0.9}}'])
+    assert sc.value == 1.0
+    assert sc.detail["keys_matched"] == 1
+    assert sorted(sc.detail["unmatched_criteria"]) == ["completeness", "safety"]
+
+
+def test_llm_judge_normalized_key_match():
+    # keys matched case/whitespace-insensitively (" Accuracy " -> accuracy)
+    m, sc, _ = _judged(['{"scores": {" Accuracy ": 1.0, "COMPLETENESS": 0.5, '
+                        '"Safety": 1.0}}'])
+    assert sc.detail["keys_matched"] == 3
+    assert abs(sc.value - (2.5 / 3)) < 1e-9
+
+
+def test_llm_judge_total_key_mismatch_is_failure_not_zero():
+    # keys match nothing and the count differs (positional fallback impossible):
+    # the sample is judge-failed/excluded, not silently 0.
+    m, sc, _ = _judged(['{"scores": {"x": 1.0, "y": 1.0, "z": 1.0, "w": 1.0}}'])
+    assert sc.value is None and sc.detail["judge_failed"] is True
+
+
+def test_llm_judge_healthbench_failed_criterion_excluded():
+    # per-criterion path: criterion 1 grades met, criterion 2 is unparseable
+    # (twice) -> excluded from achieved AND possible, so value = 1/1, not 1/2.
+    rubric = [{"id": "a", "points": 1, "criterion": "covers A"},
+              {"id": "b", "points": 1, "criterion": "covers B"}]
+    m, sc, judge = _judged(
+        ['{"explanation": "ok", "criteria_met": true}', "not json", "not json"],
+        reference={"rubric": rubric}, config={"per_criterion": True})
+    assert judge.calls == 3
+    assert sc.value == 1.0 and sc.detail["failed_criteria"] == ["b"]
+    # all criteria failing -> the whole sample is judge-failed (excluded)
+    m2, sc2, _ = _judged(["no", "no", "no", "no"],
+                         reference={"rubric": rubric}, config={"per_criterion": True})
+    assert sc2.value is None and sc2.detail["judge_failed"] is True
+
+
+def test_no_gold_excluded_across_structured_metrics():
+    empty = Sample(id="e", task_type=TaskType.OPEN_QA,
+                   messages=[Message("user", "q")], reference={})
+    for name in ("meridian_acupoint", "tongue_pulse", "classics_ontology",
+                 "prescription_match"):
+        sc = _score(name, empty, _pred("足三里 舌红苔黄 脉弦 《伤寒论》 荆芥防风"))
+        assert sc.value is None and sc.detail["skipped"] == "no_gold", name
+        m = create_metric(name)
+        real = asyncio.run(m.score(_sample("取足三里。舌红苔黄，脉弦。出自《伤寒论》。"
+                                           "药物组成：荆芥、防风"), _pred("取足三里，舌红苔黄，脉弦，"
+                                           "见《伤寒论》。药物组成：荆芥、防风")))
+        agg = m.aggregate([real, sc])
+        assert agg["n"] == 2 and agg["n_scored"] == 1 and agg["skipped_no_gold"] == 1, name
+        head = next(iter(agg.values()))
+        assert head == real.value, name                 # mean over scored only
+
+
+def test_no_gold_component_does_not_dilute_sub_f1():
+    # sample 1 has only meridian gold; its (empty) acupoint side must not drag
+    # acupoint_f1 down in the aggregate.
+    m = create_metric("meridian_acupoint")
+    s1 = _sample("循胃经。")
+    sc1 = asyncio.run(m.score(s1, _pred("足阳明胃经")))
+    s2 = _sample("主穴取足三里。")
+    sc2 = asyncio.run(m.score(s2, _pred("取足三里")))
+    agg = m.aggregate([sc1, sc2])
+    assert agg["meridian_f1"] == 1.0 and agg["acupoint_f1"] == 1.0
 
 
 if __name__ == "__main__":

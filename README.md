@@ -239,7 +239,7 @@ Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baic
 
 - **`mcq_accuracy`** — **zero-shot CoT** prompting by default (reason step-by-step → `Answer: X`), with a structured-line-first, last-match-wins parser that ignores distractors mentioned in the reasoning and strips `<think>` traces. Robust letter/index/text extraction; single **and** multi-answer.
 - **`pass_k`** — *k* independent rollouts must *all* succeed (reports pass@1 too). Reasoning-model `<think>` traces are stripped before agent action parsing.
-- **`llm_judge`** — the judge is *just a provider*. Rubric resolves from the dataset (HealthBench points, CSEDB 分数, LLMEval checklist) or a per-task default (open_qa / **sdt 证型链** / **prescription 方剂** / **safety 安全**). Explicit 0/0.5/1 scoring anchors; malformed judge JSON is recovered through a **`json-repair`** pipeline; criterion keys are matched by id/text/position (never a silent 0). Signed points honored — a **negative-point** rubric is always routed through the per-criterion path so penalties keep the right sign; `per_criterion: true` runs the **faithful HealthBench algorithm** (one call per item, boolean `criteria_met`, signed-met / positive-points).
+- **`llm_judge`** — the judge is *just a provider*. Rubric resolves from the dataset (HealthBench points, CSEDB 分数, LLMEval checklist) or a per-task default (open_qa / **sdt 证型链** / **prescription 方剂** / **safety 安全**). Explicit 0/0.5/1 scoring anchors; malformed judge JSON is recovered through a **`json-repair`** pipeline; criterion keys are matched by id/text/normalized-text/position (never a silent 0). A judge that still returns nothing usable is **retried, then the sample is excluded** (`value=None`, surfaced as `judge_failures` in the aggregate) — a judge infrastructure failure is never scored as a model 0; ungraded criteria in a partial key match are likewise excluded from the ratio, not coerced to 0. Signed points honored — a **negative-point** rubric is always routed through the per-criterion path so penalties keep the right sign; `per_criterion: true` runs the **faithful HealthBench algorithm** (one call per item, boolean `criteria_met`, signed-met / positive-points).
 - **`f1` / `rouge` / `bleu`** — token overlap vs. a reference; **CJK-aware** tokenization (char-level Chinese, word-level Latin, `jieba` if installed).
 - **`numeric_match`** — calculation tasks (MedCalc-Bench): extracts the labeled `Answer: <number>` line (then a last-match marker, scientific notation supported) and checks it within tolerance / `[lower, upper]` range.
 - **`prescription_match`** — **方剂结构匹配**: herb-set P/R/F1 (君臣佐使) + formula-name + 治法 overlap, from the structured gold.
@@ -247,6 +247,8 @@ Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baic
 - **`meridian_acupoint`** — **经络腧穴**: set-F1 over 12 正经 + 奇经 and acupoints, with alias normalization.
 - **`tongue_pulse`** — **舌象/脉象**: clause-anchored set-F1 over tongue (舌色/舌形/苔) and pulse (脉) features.
 - **`classics_ontology`** — **古籍本体**: did the answer ground itself in the right classical source(s)? Set-F1 + longest-match dedup; aliases from the knowledge graph.
+
+> Structured metrics (方剂/证型链/经络腧穴/舌脉/古籍) **exclude** samples whose reference yields no extractable gold (`value=None`; aggregates report `n_scored` / `skipped_no_gold`) instead of scoring them 0 — an unscorable reference is not the model's fault.
 
 </details>
 

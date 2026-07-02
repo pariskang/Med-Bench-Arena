@@ -66,7 +66,7 @@ def merge_results(results_dir: str | Path, output_dir: str | Path | None = None
             try:
                 agg[name] = create_metric(name).aggregate(scores)
             except Exception as e:  # unknown/un-loaded metric -> mean fallback
-                vals = [s.value for s in scores]
+                vals = [s.value for s in scores if s.value is not None]
                 agg[name] = {name: sum(vals) / len(vals) if vals else 0.0, "n": len(scores),
                              "warning": str(e)}
         cost = sum(float(r.get("cost_usd", 0.0)) for r in detail)
