@@ -217,6 +217,53 @@ def test_prescription_drops_prep_words():
     assert "加减" not in herbs and "水煎服" not in herbs
 
 
+# --------------------------------------------------------------------------
+# --models filter vs agent support models / missing support fails loudly
+# --------------------------------------------------------------------------
+def test_models_filter_keeps_agent_support_models():
+    from medeval.cli import _apply_model_filter
+
+    cfg = {
+        "models": [
+            {"id": "doctor", "type": "mock", "behavior": "auto"},
+            {"id": "other", "type": "mock", "behavior": "auto"},
+            {"id": "patient", "type": "mock", "behavior": "auto"},
+            {"id": "judge", "type": "mock", "behavior": "auto", "judge_only": True},
+        ],
+        "datasets": [{"id": "clinic", "adapter": "agentclinic",
+                      "support": {"patient": "patient", "moderator": "patient"}}],
+    }
+    missing = _apply_model_filter(cfg, "doctor")
+    assert missing == []
+    kept = {m["id"]: m for m in cfg["models"]}
+    # requested candidate + judge + support model all survive; 'other' is dropped
+    assert set(kept) == {"doctor", "judge", "patient"}
+    # the support model serves its role but is NOT evaluated as a candidate
+    assert kept["patient"]["judge_only"] is True
+    assert not kept["doctor"].get("judge_only")
+    # unknown ids are reported
+    assert _apply_model_filter(dict(cfg), "doctor,nope") == ["nope"]
+
+
+def test_missing_agent_support_model_fails_loudly():
+    runner = Runner({"models": [{"id": "doctor", "type": "mock", "behavior": "auto"}],
+                     "datasets": [], "run": {"cache": False}})
+
+    class _Ds:
+        id = "clinic"
+        support_spec = {"patient": "patient-model"}
+
+    try:
+        runner._agent_support(_Ds())
+        assert False, "expected ValueError for a support model missing from models[]"
+    except ValueError as e:
+        assert "patient-model" in str(e)
+    # no support block -> scripted setup, no error
+    class _DsPlain:
+        id = "demo"
+    assert runner._agent_support(_DsPlain()) is None
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_") and callable(_fn):

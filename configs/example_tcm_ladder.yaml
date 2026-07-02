@@ -13,7 +13,11 @@ run:
   cache: true
 
 eval:
-  gen: {temperature: 0.0, max_tokens: 256}
+  # 2048, not 256: the MCQ default is zero-shot CoT ("think step by step, then
+  # Answer: X"); with multi-answer items ("Answer: BC") a 256-token cap truncates
+  # the trace before the Answer: line and the item scores 0. TCM-Ladder is an
+  # official-tier set — truncation-driven zeros would corrupt the leaderboard.
+  gen: {temperature: 0.0, max_tokens: 2048}
 
 models:
   - {id: gpt-4o, type: litellm, model: openai/gpt-4o, api_key_env: OPENAI_API_KEY}  # vision-capable

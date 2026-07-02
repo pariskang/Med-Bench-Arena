@@ -272,7 +272,7 @@ python -m medeval run configs/example_medagentbench.yaml --limit 10
 
 ## 🖼 多模态（舌象 / 影像）
 
-`Message` 可携带可选的 `images`（http/data URI 或本地路径 → 自动转 data-URI）；`to_openai()` 产出 OpenAI/LiteLLM **内容块**，因此 LiteLLM 与 Poe 视觉模型无需改动即可使用。`hf_mcq` 适配器接受 `image` 字段（URL / 本地路径 / HF `Image` 字典 / **parquet 原始字节** / PIL）。对于图片以独立 `images.zip` 发布的数据集，设置 `image_zip:` + `image_base:`，适配器会**自动下载并解压**一次（幂等）；也可用 `python -m medeval fetch <url>` 预取。
+`Message` 可携带可选的 `images`（http/data URI 或本地路径 → 自动转 data-URI）；`to_openai()` 产出 OpenAI/LiteLLM **内容块**，因此 LiteLLM 与 Poe 视觉模型无需改动即可使用。本地 **HF 视觉模型**（灵枢 / MedGemma）同样可用：携带图片的 batch 会路由到 **vLLM 的 `chat()` 多模态 API**；若加载的后端无法处理图片（transformers 回退、过旧的 vLLM），provider 会**直接报错而不是静默丢图**、让模型只凭文本被评分。`hf_mcq` 适配器接受 `image` 字段（URL / 本地路径 / HF `Image` 字典 / **parquet 原始字节** / PIL）。对于图片以独立 `images.zip` 发布的数据集，设置 `image_zip:` + `image_base:`，适配器会**自动下载并解压**一次（幂等）；也可用 `python -m medeval fetch <url>` 预取。
 
 ---
 

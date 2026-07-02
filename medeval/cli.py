@@ -18,17 +18,38 @@ def _load_config(path: str) -> dict[str, Any]:
     return yaml.safe_load(Path(path).read_text(encoding="utf-8"))
 
 
+def _apply_model_filter(cfg: dict[str, Any], models_arg: str) -> list[str]:
+    """Filter ``cfg['models']`` down to the --models selection.
+
+    Judges (``judge_only``) are always kept. Models referenced by a dataset's
+    agent ``support:`` block (patient / measurement / moderator) are kept too —
+    dropping them would silently swap the faithful multi-agent setup for the
+    scripted fallback, changing the evaluation protocol. A support model that
+    was not itself requested is demoted to ``judge_only`` so it serves its role
+    without also being evaluated as a candidate. Returns the requested ids that
+    matched nothing (an error for the caller to report)."""
+    wanted = {m.strip() for m in models_arg.split(",") if m.strip()}
+    support_ids = {mid for d in cfg.get("datasets", [])
+                   for mid in (d.get("support") or {}).values()}
+    kept: list[dict[str, Any]] = []
+    for m in cfg.get("models", []):
+        mid = m.get("id")
+        if mid in wanted or m.get("judge_only"):
+            kept.append(m)
+        elif mid in support_ids:
+            kept.append({**m, "judge_only": True})   # role provider, not a candidate
+    missing = wanted - {m.get("id") for m in kept}
+    cfg["models"] = kept
+    return sorted(missing)
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     cfg = _load_config(args.config)
     if args.models:
-        wanted = {m.strip() for m in args.models.split(",") if m.strip()}
-        kept = [m for m in cfg.get("models", [])
-                if m.get("id") in wanted or m.get("judge_only")]
-        missing = wanted - {m.get("id") for m in kept}
+        missing = _apply_model_filter(cfg, args.models)
         if missing:
-            print(f"[medeval] --models: no such model id(s): {sorted(missing)}")
+            print(f"[medeval] --models: no such model id(s): {missing}")
             return 2
-        cfg["models"] = kept
     if args.limit is not None:
         for d in cfg.get("datasets", []):
             d["limit"] = args.limit
@@ -192,8 +213,9 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--limit", type=int, default=None,
                        help="cap samples per dataset (overrides config)")
     p_run.add_argument("--models", default=None,
-                       help="comma-separated model ids to keep (judges always kept); "
-                            "select one HF model per run since vLLM holds it in GPU memory")
+                       help="comma-separated model ids to keep (judges and agent "
+                            "support: models always kept); select one HF model per "
+                            "run since vLLM holds it in GPU memory")
     p_run.add_argument("--output", default=None, help="override run.output_dir")
     p_run.add_argument("--no-cache", action="store_true", help="disable generation cache")
     p_run.add_argument("--num-shards", type=int, default=1,

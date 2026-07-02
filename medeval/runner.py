@@ -216,8 +216,17 @@ class Runner:
 
     def _agent_support(self, ds) -> dict[str, ModelProvider] | None:
         spec = getattr(ds, "support_spec", {}) or {}
-        support = {role: self.providers[mid] for role, mid in spec.items()
-                   if mid in self.providers}
+        missing = sorted({mid for mid in spec.values() if mid not in self.providers})
+        if missing:
+            # Falling back to the scripted patient/moderator here would silently
+            # swap the evaluation protocol (and its split_type claim). Fail loudly,
+            # like _judge_for does for a missing judge.
+            raise ValueError(
+                f"dataset {ds.id!r} declares agent support model(s) {missing} that "
+                "are not in models[]. Add them to the config (they are kept "
+                "automatically under --models), or remove the support: block to "
+                "use the offline scripted setup.")
+        support = {role: self.providers[mid] for role, mid in spec.items()}
         return support or None
 
     # --- caching ----------------------------------------------------------

@@ -312,7 +312,7 @@ python -m medeval run configs/example_medagentbench.yaml --limit 10
 
 ## 🖼 Multimodal (舌象 / 影像)
 
-`Message` carries optional `images` (http/data URIs or local paths → auto data-URI); `to_openai()` emits OpenAI/LiteLLM **content blocks**, so LiteLLM and Poe vision models work unchanged. The `hf_mcq` adapter takes an `image` field (URL / local path / HF `Image` dict / **raw parquet bytes** / PIL). For sets that ship images as a separate `images.zip`, set `image_zip:` + `image_base:` and the adapter **auto-downloads + unzips** once (idempotent); pre-fetch with `python -m medeval fetch <url>`.
+`Message` carries optional `images` (http/data URIs or local paths → auto data-URI); `to_openai()` emits OpenAI/LiteLLM **content blocks**, so LiteLLM and Poe vision models work unchanged. Local **HF vision models** (Lingshu / MedGemma) work too: image-carrying batches are routed through **vLLM's `chat()` multimodal API** — and if the loaded backend can't run images (transformers fallback, old vLLM) the provider **raises instead of silently dropping the images** and scoring the model on text alone. The `hf_mcq` adapter takes an `image` field (URL / local path / HF `Image` dict / **raw parquet bytes** / PIL). For sets that ship images as a separate `images.zip`, set `image_zip:` + `image_base:` and the adapter **auto-downloads + unzips** once (idempotent); pre-fetch with `python -m medeval fetch <url>`.
 
 ---
 

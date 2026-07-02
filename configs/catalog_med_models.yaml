@@ -169,11 +169,14 @@ models:
 
   # ===========================================================================
   # 🖼  MULTIMODAL MEDICAL LLMs (vision-language)
-  #     Wired here as text backends for the MCQ slice; for image benchmarks use
-  #     configs/catalog_multimodal.yaml. NOTE: these are *ForConditionalGeneration
-  #     models — run them on vLLM (the default). The transformers fallback uses
-  #     AutoModelForCausalLM and will NOT load a VL model, so do not force
-  #     backend: transformers here. trust_remote_code=True.
+  #     Text MCQ works as-is; for image benchmarks point these same entries at
+  #     configs/catalog_multimodal.yaml datasets — image-carrying batches are
+  #     routed through vLLM's chat() multimodal API (the model actually sees the
+  #     pixels). NOTE: these are *ForConditionalGeneration models — run them on
+  #     vLLM ≥ 0.6 (the default). The transformers fallback uses
+  #     AutoModelForCausalLM: it will NOT load a VL model, and on image batches
+  #     the provider raises rather than silently dropping the images — so do not
+  #     force backend: transformers here. trust_remote_code=True.
   # ===========================================================================
 
   # Lingshu (灵枢) — Qwen2.5-VL based medical MLLM (12+ imaging modalities). MIT.
