@@ -236,8 +236,16 @@ class Runner:
         # `gen:` block (e.g. temperature) silently reused stale cached generations.
         merged = (prov._merge_gen(self.gen_defaults)
                   if hasattr(prov, "_merge_gen") else self.gen_defaults)
-        sig = json.dumps({"gen": merged, "model": getattr(prov, "model", prov.id)},
-                         sort_keys=True)
+        key: dict[str, Any] = {"gen": merged, "model": getattr(prov, "model", prov.id)}
+        if isinstance(ds, AgentAdapter):
+            # Agent rollouts also depend on the rollout protocol: editing k /
+            # max_turns / support in the config MUST invalidate the cache, or a
+            # reliability re-run (k: 1 -> 3) silently reuses rollout lists of the
+            # old length and reports the old k's pass^k.
+            key["agent"] = {"k": getattr(ds, "k", 1),
+                            "max_turns": getattr(ds, "max_turns", None),
+                            "support": getattr(ds, "support_spec", {}) or {}}
+        sig = json.dumps(key, sort_keys=True)
         # hashlib, NOT the builtin hash(): hash() of a str is salted per process
         # via PYTHONHASHSEED, so it returns a different value every launch — the
         # cache filename would change on each run and resume would never find the

@@ -87,7 +87,7 @@ pip install -e ".[all]"          # + datasets, litellm, openai, ray (no GPU need
 pip install vllm transformers torch peft
 ```
 
-> Requires **Python 3.10+**. The offline smoke test needs only `pyyaml`.
+> Requires **Python 3.10+**. The one-liner `example_smoke.yaml` run needs only `pyyaml`; the full offline test suite additionally needs the `datasets` extra (two suites load it) — `pip install -e ".[all]"`.
 
 ---
 
@@ -134,7 +134,7 @@ medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 
 MCQ evaluation is only trustworthy if the data is exactly what you think it is — and a full run is only practical if it survives an interruption. Five guards:
 
-- **Pinned revisions** — every headline MCQ benchmark is locked to an immutable commit, so the eval set can never silently change. HF repos use `revision: <sha>` (passed to `load_dataset`); raw-file sources embed the commit in the URL (`…/resolve/<sha>/…`, `raw.githubusercontent/…/<sha>/…`). Large pinned files download via an atomic, **HTTP-Range-resuming** fetcher — robust to proxies that truncate big responses, and a failed download never poisons the cache.
+- **Pinned revisions** — the headline MCQ catalog ([`catalog_mcq.yaml`](configs/catalog_mcq.yaml), except TCMBench-demo whose upstream publishes no stable ref — it is `demo`-tier anyway), the model-catalog MCQ slice, and TCM-Ladder are locked to immutable commits, so those eval sets can never silently change. HF repos use `revision: <sha>` (passed to `load_dataset`); raw-file sources embed the commit in the URL (`…/resolve/<sha>/…`, `raw.githubusercontent/…/<sha>/…`). The other catalogs (`catalog_en_med` / `catalog_multimodal` / `catalog_cn_tcm` / parts of `catalog_ethics_safety`) currently **track `main`** — their headers say so; pin a `revision:` before publishing numbers from them. Large pinned files download via an atomic, **HTTP-Range-resuming** fetcher — robust to proxies that truncate big responses, and a failed download never poisons the cache.
 - **`preflight`** — profile every dataset *without a model*: sample count, option-count distribution, **answer-parse success rate**, and the first few examples. Run it before you spend a single token:
 
 ```bash
@@ -208,7 +208,7 @@ A representative slice (all wired & verified against live sources; **30+** docum
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 
-[`configs/catalog_med_models.yaml`](configs/catalog_med_models.yaml) wires **18 medical & TCM LLMs** as ready-to-run HF/vLLM backends — every repo id, base architecture, `dtype`, context length and `trust_remote_code` flag **verified against the live HuggingFace page** (full table + per-model notes in [`MODELS.md`](MODELS.md)). Pick one per run (vLLM holds a model in GPU memory) with `--models`:
+[`configs/catalog_med_models.yaml`](configs/catalog_med_models.yaml) wires **17 medical & TCM LLMs** as ready-to-run HF/vLLM backends — every repo id, base architecture, `dtype`, context length and `trust_remote_code` flag **verified against the live HuggingFace page** (full table + per-model notes in [`MODELS.md`](MODELS.md)). Pick one per run (vLLM holds a model in GPU memory) with `--models`:
 
 ```bash
 python -m medeval run configs/catalog_med_models.yaml --models zhongjing-2-1_8b --limit 20
@@ -398,9 +398,9 @@ medeval/
 └── cli.py                     # python -m medeval run|preflight|list|export|merge|pool|slurm|kg|fetch
 configs/                       # declarative, live-verified run specs (incl. catalog_med_models.yaml)
 notebooks/                     # Colab runner for the medical / TCM model catalog
-tests/                         # 13 offline suites (no keys / GPU / network)
+tests/                         # 13 offline suites (no keys / GPU / network; needs the `datasets` extra)
 DATASETS.md                    # per-dataset access notes, caveats, field maps
-MODELS.md                      # the 18-model catalog: verified repo ids, archs, gating, quirks
+MODELS.md                      # the 17-model catalog: verified repo ids, archs, gating, quirks
 ```
 
 ---
@@ -425,6 +425,7 @@ If Med-Bench-Arena helps your research, please cite it:
 Contributions are welcome! Adding a benchmark is usually **config-only** (see `DATASETS.md` for the field-map vocabulary). For a new adapter/metric/backend, register it with the decorator above and add a test under `tests/`. Please run the offline suite before opening a PR:
 
 ```bash
+pip install -e ".[all]"                             # the suite needs the `datasets` extra
 for t in tests/test_*.py; do python "$t"; done      # all 13 should print OK
 ```
 

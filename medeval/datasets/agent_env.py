@@ -67,6 +67,11 @@ def _download(url: str, dest: Path) -> Path:
 class AgentEnvironment(abc.ABC):
     """Minimal Gym-like environment for a doctor agent."""
 
+    # Optional image URLs shown to the doctor with the FIRST observation (e.g. the
+    # NEJM case image). The rollout loop attaches them to the initial user turn —
+    # without this a vision benchmark would silently run blind on text alone.
+    initial_images: Optional[list[str]] = None
+
     @abc.abstractmethod
     async def reset(self) -> str:
         """Return the initial observation."""
@@ -90,6 +95,9 @@ class AgentAdapter(DatasetAdapter):
         super().__init__(config)
         self.max_turns = int(config.get("max_turns", 20))
         self.k = int(config.get("k", config.get("pass_k", 1)))
+        # role -> model-id map (patient/measurement/moderator), resolved by the
+        # runner; also part of the generation-cache key (protocol-relevant).
+        self.support_spec: dict[str, str] = config.get("support", {}) or {}
         if not self.metric_specs:
             self.metric_specs = [("pass_k", {})]
             self.metrics = ["pass_k"]
@@ -105,7 +113,19 @@ class AgentAdapter(DatasetAdapter):
     async def rollout(self, sample: Sample, provider, k: int | None = None,
                       gen: dict | None = None, support: dict | None = None) -> Prediction:
         gen = dict(gen or {})
+        # apply the model's own gen: overrides (the runner's agenerate_many path
+        # merges them in the provider; the agent loop calls agenerate directly,
+        # so merge here or per-model sampling would be silently ignored)
+        if hasattr(provider, "_merge_gen"):
+            gen = provider._merge_gen(gen)
         k = k or self.k
+        if k > 1 and not float(gen.get("temperature") or 0.0) > 0.0 \
+                and not getattr(self, "_warned_deterministic", False):
+            self._warned_deterministic = True
+            print(f"[medeval] WARNING {self.id}: k={k} rollouts at temperature 0 — "
+                  "all rollouts are identical, so pass^k degenerates to pass@1 at "
+                  f"{k}x the cost. Set a non-zero temperature (e.g. eval.gen "
+                  "temperature: 0.7) for a meaningful reliability estimate.")
         rollouts: list[dict[str, Any]] = []
         first_gen: Generation | None = None
         first_traj: list[dict[str, Any]] | None = None
@@ -113,9 +133,11 @@ class AgentAdapter(DatasetAdapter):
         for ki in range(k):
             env = self.make_env(sample, support)
             obs = await env.reset()
+            imgs = getattr(env, "initial_images", None) or None
             messages = [Message("system", self.doctor_system_prompt(env)),
-                        Message("user", obs)]
-            traj: list[dict[str, Any]] = [{"role": "env", "content": obs}]
+                        Message("user", obs, images=imgs)]
+            traj: list[dict[str, Any]] = [{"role": "env", "content": obs,
+                                           **({"images": imgs} if imgs else {})}]
             reward, done, info = 0.0, False, {}
             last_gen: Generation | None = None
             turn = 0
@@ -237,6 +259,10 @@ class AgentClinicEnv(AgentEnvironment):
             self.objective = scenario.get("question", "Determine the most likely diagnosis.")
             self.correct = next((a.get("text", "") for a in scenario.get("answers", [])
                                  if a.get("correct")), "")
+            # NEJM cases are image cases: surface the case image to the doctor
+            # (attached to the first observation by the rollout loop).
+            img = scenario.get("image_url") or scenario.get("image")
+            self.initial_images = [str(img)] if img else None
         else:
             self.osce = scenario.get("OSCE_Examination", scenario)
             self.objective = self.osce.get("Objective_for_Doctor", "Assess and diagnose the patient.")
@@ -373,7 +399,6 @@ class AgentClinicAdapter(AgentAdapter):
         super().__init__(config)
         self.source_url = config.get("source_url", self.DEFAULT_URL)
         self.variant = config.get("variant", "medqa")
-        self.support_spec = config.get("support", {})
         # scripted (rule-based) patient/moderator is an approximation; the faithful
         # multi-agent setup needs LLM `support:` (unless split_type is pinned)
         if "split_type" not in config:
@@ -683,7 +708,6 @@ class MediQAdapter(AgentAdapter):
         self.source_url = config.get("source_url", self.DEFAULT_URL)
         self.max_questions = int(config.get("max_questions", config.get("max_turns", 15)))
         self.max_turns = self.max_questions + 1
-        self.support_spec = config.get("support", {})
 
     def load(self) -> list[Sample]:
         h = hashlib.sha256(self.source_url.encode()).hexdigest()[:16]

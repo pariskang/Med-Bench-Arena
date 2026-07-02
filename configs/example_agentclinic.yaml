@@ -15,7 +15,10 @@ run:
   cache: true
 
 eval:
-  gen: {temperature: 0.0, max_tokens: 512}
+  # temperature 0.7, NOT 0: pass^k measures reliability across k INDEPENDENT
+  # rollouts — at temperature 0 all k rollouts are identical and pass^k
+  # degenerates to pass@1 at k times the cost (the runner warns if you do this).
+  gen: {temperature: 0.7, max_tokens: 512}
 
 models:
   - {id: mock-model, type: mock, behavior: auto}        # offline doctor (smoke)

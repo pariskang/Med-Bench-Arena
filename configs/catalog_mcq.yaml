@@ -27,8 +27,10 @@ models:
 datasets:
   # ---- English ----------------------------------------------------------
   # NOTE: every dataset below is PINNED to an immutable commit (revision / URL hash)
-  # so the eval set can never silently change underneath you. `revision:` is passed
-  # to load_dataset(); data_files/answer URLs embed the commit (resolve/<sha> or
+  # so the eval set can never silently change underneath you — EXCEPT tcmbench_demo,
+  # whose upstream repo publishes no stable ref (its URLs track main; it is demo-tier
+  # and fenced off the official leaderboard anyway). `revision:` is passed to
+  # load_dataset(); data_files/answer URLs embed the commit (resolve/<sha> or
   # raw.githubusercontent/.../<sha>/). Profile after pinning with:
   #     python -m medeval preflight configs/catalog_mcq.yaml
   - id: medqa_usmle           # USMLE, 1273 test Qs, options dict, letter answer

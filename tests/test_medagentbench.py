@@ -149,7 +149,48 @@ def test_real_get_post_finish_against_mock_fhir():
         srv.shutdown()
 
 
+def test_ungradable_tasks_excluded_from_pass_k():
+    from medeval import Sample, TaskType, create_metric
+    from medeval.schema import Generation, Prediction
+
+    # query task without shipped gold + no illegal write -> ungradable, NOT a fail
+    ok, d = builtin_grade({"id": "task2_1", "eval_MRN": "S1"}, ["98.6"], "x", [])
+    assert not ok and d.get("ungradable") is True
+    # ...but an illegal write on the same task IS a real, gradable failure
+    wrote = [{"status": 201, "body": {"resourceType": "Observation"}}]
+    ok_w, d_w = builtin_grade({"id": "task2_1", "eval_MRN": "S1"}, ["98.6"], "x", wrote)
+    assert not ok_w and not d_w.get("ungradable")
+    # conditional no-op (task5, ordered nothing) is ungradable too
+    t5 = {"id": "task5_1", "eval_MRN": "S9",
+          "instruction": "order IV magnesium", "context": "NDC 0338-1715-40"}
+    _, d5 = builtin_grade(t5, [], "x", [])
+    assert d5.get("undecidable_noop") and d5.get("ungradable")
+
+    # pass_k: a sample whose every rollout is ungradable is EXCLUDED from the mean
+    m = create_metric("pass_k")
+
+    def _pred(sid, rollouts):
+        return Prediction(sample_id=sid, generation=Generation(text=""), rollouts=rollouts)
+
+    s1 = Sample(id="s1", task_type=TaskType.AGENT, messages=[])
+    s2 = Sample(id="s2", task_type=TaskType.AGENT, messages=[])
+    sc_ok = asyncio.run(m.score(s1, _pred("s1", [{"success": True, "turns": 2, "info": {}}])))
+    sc_un = asyncio.run(m.score(s2, _pred(
+        "s2", [{"success": False, "turns": 2, "info": {"ungradable": True}}])))
+    assert sc_ok.value == 1.0
+    assert sc_un.value is None and sc_un.detail["skipped"] == "ungradable"
+    agg = m.aggregate([sc_ok, sc_un])
+    assert agg["pass^k"] == 1.0            # ungradable sample did not drag the mean
+    assert agg["n"] == 2 and agg["n_scored"] == 1 and agg["ungradable"] == 1
+    # mixed rollouts: the gradable ones decide, ungradable ones are ignored
+    sc_mix = asyncio.run(m.score(s1, _pred("s1", [
+        {"success": True, "turns": 1, "info": {}},
+        {"success": False, "turns": 1, "info": {"ungradable": True}}])))
+    assert sc_mix.value == 1.0 and sc_mix.detail["ungradable_rollouts"] == 1
+
+
 if __name__ == "__main__":
     test_parse_finish_and_builtin_grade()
     test_real_get_post_finish_against_mock_fhir()
+    test_ungradable_tasks_excluded_from_pass_k()
     print("OK: MedAgentBench FHIR loop + grader tests passed")

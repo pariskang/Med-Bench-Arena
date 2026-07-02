@@ -6,6 +6,9 @@
 # (C) gated. Verified against live HF (2026-06).
 #
 #   python -m medeval run configs/catalog_multimodal.yaml --limit 5
+# REPRODUCIBILITY NOTE: only some entries here are commit-pinned; the rest track
+# main (resolve/main URLs). Pin a `revision:` / <sha> URL before publishing
+# official numbers — see the Reliability section of the README.
 run:
   output_dir: ./results/multimodal
   concurrency: 8

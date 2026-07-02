@@ -52,7 +52,16 @@ class PassK(Metric):
 
     async def score(self, sample: Sample, pred: Prediction) -> Score:
         rollouts = pred.rollouts or []
-        successes = [bool(r.get("success")) for r in rollouts]
+        # rollouts the grader flagged as unverifiable offline (e.g. MedAgentBench
+        # query tasks without shipped gold, conditional no-ops) are not failures —
+        # they simply cannot be graded. A sample where EVERY rollout is ungradable
+        # is excluded from the aggregate; mixed samples score over the gradable ones.
+        gradable = [r for r in rollouts
+                    if not (r.get("info") or {}).get("ungradable")]
+        if rollouts and not gradable:
+            return Score(metric="pass_k", value=None,
+                         detail={"skipped": "ungradable", "k": len(rollouts)})
+        successes = [bool(r.get("success")) for r in gradable]
         k = len(successes)
         pass_pow_k = 1.0 if k > 0 and all(successes) else 0.0
         pass_at_1 = 1.0 if successes and successes[0] else 0.0
@@ -64,19 +73,22 @@ class PassK(Metric):
             value=pass_pow_k,
             detail={"k": k, "pass^k": pass_pow_k, "pass@1": pass_at_1,
                     "success_fraction": frac, "successes": successes,
+                    "ungradable_rollouts": len(rollouts) - len(gradable),
                     "mean_turns": (sum(turns) / len(turns)) if turns else 0.0,
                     "timeout": timed_out},
         )
 
     def aggregate(self, scores: list[Score]) -> dict[str, Any]:
-        n = len(scores)
-        if not n:
-            return {"pass^k": 0.0, "pass@1": 0.0, "n": 0}
+        scored = [s for s in scores if s.value is not None]
+        n, m = len(scores), len(scored)
+        if not m:
+            return {"pass^k": 0.0, "pass@1": 0.0, "n": n, "n_scored": 0,
+                    "ungradable": n}
         return {
-            "pass^k": sum(s.detail["pass^k"] for s in scores) / n,
-            "pass@1": sum(s.detail["pass@1"] for s in scores) / n,
-            "mean_success_fraction": sum(s.detail["success_fraction"] for s in scores) / n,
-            "avg_turns": sum(s.detail.get("mean_turns", 0.0) for s in scores) / n,
-            "timeout_rate": sum(1 for s in scores if s.detail.get("timeout")) / n,
-            "n": n,
+            "pass^k": sum(s.detail["pass^k"] for s in scored) / m,
+            "pass@1": sum(s.detail["pass@1"] for s in scored) / m,
+            "mean_success_fraction": sum(s.detail["success_fraction"] for s in scored) / m,
+            "avg_turns": sum(s.detail.get("mean_turns", 0.0) for s in scored) / m,
+            "timeout_rate": sum(1 for s in scored if s.detail.get("timeout")) / m,
+            "n": n, "n_scored": m, "ungradable": n - m,
         }
