@@ -78,9 +78,18 @@ def _as_float(x: Any):
         return None
 
 
+def _looks_numeric(x: Any) -> bool:
+    """A bare number (optionally signed/decimal), NOT an identifier like 'S6534835'
+    that merely contains digits — those must match as strings, not as floats."""
+    return bool(re.fullmatch(r"\s*[-+]?\d+(?:\.\d+)?\s*", str(x)))
+
+
 def _query_match(answer: list, sol: list) -> bool:
-    # numeric answers (e.g. averages): tolerant compare on the first element
-    if len(sol) == 1 and len(answer) >= 1:
+    # numeric answers (e.g. averages): tolerant compare — ONLY when BOTH sides are
+    # genuinely numeric. Coercing an MRN like 'S6534835' to 6534835.0 would let a
+    # differently-prefixed id (or a bare number) match — a false pass.
+    if (len(sol) == 1 and len(answer) >= 1
+            and _looks_numeric(sol[0]) and _looks_numeric(answer[0])):
         fa, fs = _as_float(answer[0]), _as_float(sol[0])
         if fa is not None and fs is not None:
             return abs(fa - fs) <= max(0.01, abs(fs) * 0.01)

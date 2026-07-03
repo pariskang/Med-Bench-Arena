@@ -94,8 +94,30 @@ def test_answer_for_submission_letter_and_text():
     assert answer_for_submission({"task": "open_qa", "prediction": "hello"}) == "hello"
 
 
+def test_load_details_merges_shard_files():
+    """A sharded run writes detail__m__ds__shard{i}of{N}.jsonl; export must merge
+    them into one (model, dataset) group, not fragment by shard."""
+    from medeval.submit import load_details
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        def _w(name, rows):
+            (d / name).write_text(
+                "\n".join(json.dumps(r, ensure_ascii=False) for r in rows), encoding="utf-8")
+        _w("detail__m__exam__shard0of2.jsonl",
+           [{"sample_id": "exam:0", "task": "mcq", "parsed": 0},
+            {"sample_id": "exam:2", "task": "mcq", "parsed": 1}])
+        _w("detail__m__exam__shard1of2.jsonl",
+           [{"sample_id": "exam:1", "task": "mcq", "parsed": 2},
+            {"sample_id": "exam:2", "task": "mcq", "parsed": 1}])  # dup id across shards
+        groups = load_details(d)
+        assert set(groups) == {("m", "exam")}          # one group, suffix stripped
+        rows = groups[("m", "exam")]
+        assert {r["sample_id"] for r in rows} == {"exam:0", "exam:1", "exam:2"}  # deduped
+
+
 if __name__ == "__main__":
     test_medbench_adapter_loads_mcq_and_open()
     test_export_opencompass_and_medbench()
     test_answer_for_submission_letter_and_text()
+    test_load_details_merges_shard_files()
     print("OK: submission export tests passed")

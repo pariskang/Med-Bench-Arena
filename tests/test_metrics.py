@@ -78,6 +78,14 @@ def test_numeric_match_tolerance_and_range():
     assert _score("numeric_match", s2, _pred("answer = 30")).value == 0.0
     # commas + "answer is" marker
     assert _score("numeric_match", _sample("1500"), _pred("Total is 1,500 mL")).value == 1.0
+    # gold given as a SENTENCE: the value must be read consistently with the
+    # prediction (the real value, not the first stray number in the sentence)
+    s3 = _sample("Using the Cockcroft-Gault formula the value is 25.2 mL/min")
+    assert _score("numeric_match", s3, _pred("Answer: 25.2")).value == 1.0
+    assert _score("numeric_match", s3, _pred("Answer: 4")).value == 0.0   # not the "4" in G-C
+    # "resulting"/"finally" must not be misread as a result/final marker
+    from medeval.metrics.numeric import _pred_number
+    assert _pred_number("The resulting workup took 8 steps. Answer: 42") == 42.0
 
 
 def test_bleu_orders_and_smoothing():

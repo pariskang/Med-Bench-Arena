@@ -57,7 +57,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         cfg.setdefault("run", {})["output_dir"] = args.output
     if args.no_cache:
         cfg.setdefault("run", {})["cache"] = False
+    if args.shard and args.num_shards <= 1:
+        print("[medeval] --shard requires --num-shards > 1")
+        return 2
     if args.num_shards and args.num_shards > 1:
+        if not 0 <= args.shard < args.num_shards:
+            print(f"[medeval] --shard must be in [0, {args.num_shards}); got {args.shard}")
+            return 2
         cfg.setdefault("run", {})["num_shards"] = args.num_shards
         cfg.setdefault("run", {})["shard_index"] = args.shard
     rows = run_config(cfg)
