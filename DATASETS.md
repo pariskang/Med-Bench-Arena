@@ -530,3 +530,8 @@ metric is MCQ-only, so these show `0 MCQ` by design — they are judge-scored, n
 - **`datasets>=5` dropped loading scripts / `trust_remote_code`:** for script-based repos
   (CMB) load the raw files via `data_files`.
 - **Judge model:** DeepSeek-R1 via LiteLLM is the cost/throughput default (CSEDB-validated).
+- **None of these benchmarks measure clinical competence** — MCQ accuracy, structured-metric
+  overlap, and rubric-graded judge scores are all proxies for their respective task formats,
+  not for diagnostic correctness, treatment efficacy, or deployment safety. See
+  [README.md § Medical scientific validity](README.md#-medical-scientific-validity--what-this-does-and-does-not-measure)
+  before citing a number here as evidence of anything beyond "scored well on this benchmark."

@@ -49,7 +49,7 @@ python -m medeval run configs/example_smoke.yaml
 
 ## 📑 Table of contents
 
-[Why](#-why) · [Architecture](#-architecture) · [Install](#-install) · [Quick start](#-quick-start) · [Reliability](#-reliability--reproducibility) · [Benchmarks](#-benchmark-catalog) · [Backends](#-backends) · [Models](#-model-catalog-medical--tcm) · [Metrics](#-metrics--judge) · [Agents](#-agents) · [Multimodal](#-multimodal-舌象--影像) · [TCM](#-traditional-chinese-medicine-中医) · [Distributed](#-distributed-scheduling) · [Submission](#-leaderboard-submission) · [Extending](#-extending) · [Layout](#-project-layout) · [Citation](#-citation) · [Contributing](#-contributing) · [License](#-license)
+[Why](#-why) · [Architecture](#-architecture) · [Install](#-install) · [Quick start](#-quick-start) · [Reliability](#-reliability--reproducibility) · [Medical validity](#-medical-scientific-validity--what-this-does-and-does-not-measure) · [Benchmarks](#-benchmark-catalog) · [Backends](#-backends) · [Models](#-model-catalog-medical--tcm) · [Metrics](#-metrics--judge) · [Agents](#-agents) · [Multimodal](#-multimodal-舌象--影像) · [TCM](#-traditional-chinese-medicine-中医) · [Distributed](#-distributed-scheduling) · [Submission](#-leaderboard-submission) · [Extending](#-extending) · [Layout](#-project-layout) · [Citation](#-citation) · [Contributing](#-contributing) · [License](#-license)
 
 ---
 
@@ -172,6 +172,18 @@ Near-duplicates are **informational by default** (a similarity cutoff is a heuri
 python -m medeval compare results/ --dataset medqa_usmle --model-a gpt-4o --model-b claude
 # paired-bootstrap CI for the mean difference + McNemar's test when the metric is binary (e.g. MCQ accuracy)
 ```
+
+---
+
+## ⚕️ Medical scientific validity — what this does and does not measure
+
+Everything above is engineering rigor: it makes a reported number *trustworthy given what it measures*. It says nothing about whether what it measures is *clinical competence*. Three gaps worth being explicit about, so a leaderboard row is never over-read:
+
+- **Dataset diversity ≠ clinical coverage.** Having 30+ benchmarks across MCQ / open-ended / agent / TCM / safety families gives *breadth of format*, not breadth of *medical practice*. USMLE-style MCQ tests recall-and-reasoning under exam conditions; it does not test the messier skills real practice needs — eliciting an ambiguous history, tolerating incomplete information, revising a working diagnosis, coordinating with other clinicians. A model that tops every catalog here has been shown to be good at *these specific tasks*, not validated for clinical deployment in any specialty, population, or care setting not represented in the data.
+- **TCM structured metrics and open-ended judge scores are proxy metrics, not clinical-efficacy measures.** `syndrome_chain` scores whether a model's 辨证 (syndrome differentiation) reasoning chain matches a reference chain's structure; `prescription_match` scores herb-set/formula-name overlap against a reference prescription. Neither measures whether the differentiation was *clinically correct for the patient* or whether the prescription would *work*. Similarly, `llm_judge`'s rubric-graded open-ended score measures agreement with a rubric (itself only checked against physician **agreement**, not treatment outcomes — see "Judge calibration" in [Metrics & judge](#-metrics--judge)). A high score on these metrics means "matches the reference structure/rubric well," not "would help a patient."
+- **Safety evaluation here is necessarily partial.** CSEDB / MedSafetyBench / MTCMB-SE / CARES-18K test refusal-worthy and harmful-request scenarios — they do **not** measure over-refusal (declining benign requests too), the quality of escalation advice ("see a doctor" without saying *when this is urgent* vs *when it can wait*), calibrated uncertainty communication, or longitudinal harm from repeated interactions. A model can score well on every safety benchmark here and still fail in ways this suite has no test for.
+
+None of this is a reason not to use the numbers — it's a reason not to read more into them than they claim. Treat every result here as *capability-on-this-benchmark*, not a clinical-competence or deployment-readiness certification.
 
 ---
 

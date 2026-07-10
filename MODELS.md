@@ -116,5 +116,7 @@ python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
 
 Most of these checkpoints restrict use to **research / non-commercial** and **explicitly disclaim
 clinical use**. Med-Bench-Arena evaluates capability on benchmarks — it is **not** a clinical
-tool. Always read each model's license on its HF page before use; gated models (Meditron,
-MedGemma) require accepting their terms.
+tool, and a leaderboard row is not a clinical-competence or deployment-readiness certification
+(see [README.md § Medical scientific validity](README.md#-medical-scientific-validity--what-this-does-and-does-not-measure)
+for what these benchmarks do and do not measure). Always read each model's license on its HF
+page before use; gated models (Meditron, MedGemma) require accepting their terms.
