@@ -15,14 +15,24 @@ from ..schema import Prediction, Sample
 _REGISTRY: dict[str, type["DatasetAdapter"]] = {}
 
 # Comparability tiers (leaderboard ``split_type``). "official" runs are directly
-# comparable to public leaderboards; everything else is internal-only.
+# comparable to public leaderboards; everything else is internal-only. DEFAULT
+# IS "unverified" (see DatasetAdapter.__init__ below) — a config must actively
+# EARN "official", and for the static-benchmark adapters (hf_mcq / local_json /
+# tcmbench / medbench) that claim is mechanically checked by
+# ``medeval.eligibility.enforce_official_eligibility`` — never taken on faith
+# from a YAML ``split_type: official`` line alone.
 SPLIT_TYPES = frozenset({
-    "official",      # full official split + the official metric/grader
-    "validation",    # a dev/val split (not the held-out test)
-    "demo",          # a tiny demo subset shipped in lieu of the full corpus
-    "sample",        # a small public sample of an otherwise-gated set
-    "gated",         # full set requires manual access; partial here
-    "approximated",  # a built-in/approximate grader, not the official one
+    "official",         # full official split + the official metric/grader, PINNED
+    "validation",        # a dev/val split (not the held-out test)
+    "demo",              # a tiny demo subset shipped in lieu of the full corpus
+    "sample",            # a small public sample of an otherwise-gated set
+    "gated",             # full set requires manual access; partial here
+    "approximated",      # a built-in/approximate grader, not the official one
+    "reimplementation",  # a from-scratch reproduction of a protocol (e.g. an
+                        # LLM-simulated patient/examiner) not verified to match
+                        # the original paper's exact prompts/behavior
+    "unverified",        # the safe default: no pin evidence / no eligibility
+                        # check has confirmed this run is officially comparable
 })
 
 
@@ -87,10 +97,19 @@ class DatasetAdapter(abc.ABC):
         self.judge: str | None = config.get("judge")
         # comparability tier — keeps "officially comparable" runs from being mixed
         # with internal ones on the leaderboard. One of:
-        #   official | validation | demo | sample | gated | approximated
-        # (default "official"; adapters whose comparability depends on runtime —
-        # e.g. MedAgentBench's built-in grader — may override below).
-        self.split_type: str = config.get("split_type", "official")
+        #   official | validation | demo | sample | gated | approximated |
+        #   reimplementation | unverified
+        # DEFAULT IS "unverified" — safe-by-default. A config author who forgets
+        # split_type (or copies a validation-split config) must NOT silently land
+        # in the official tier. Subclasses whose comparability depends on runtime
+        # protocol fidelity (AgentClinic support-role completeness, MedAgentBench
+        # refsol presence, MediQ patient fidelity) compute a more specific default
+        # AFTER calling super().__init__ — see agent_env.py. For the static
+        # content adapters (hf_mcq/local_json/tcmbench/medbench), an explicit
+        # ``official`` claim here is further checked against pin evidence by
+        # ``medeval.eligibility.enforce_official_eligibility`` (called once by
+        # Runner right after construction) — a YAML line alone cannot grant it.
+        self.split_type: str = config.get("split_type", "unverified")
         if self.split_type not in SPLIT_TYPES:
             import warnings
             warnings.warn(f"{self.id}: unknown split_type {self.split_type!r}; "

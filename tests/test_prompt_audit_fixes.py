@@ -59,14 +59,18 @@ class _DS:
 
 
 def test_cache_path_is_deterministic_sha1():
+    from medeval.runner import _dataset_protocol_key
+
     r = _runner()
     prov = r.providers["m"]
     p1, p2 = r._cache_path(prov, _DS()), r._cache_path(prov, _DS())
     assert p1 == p2  # stable within a process
     # and reproducible by an independent sha1 of the same signature (cross-process)
     merged = prov._merge_gen(r.gen_defaults)
-    sig = json.dumps({"gen": merged, "model": getattr(prov, "model", prov.id)},
-                     sort_keys=True)
+    sig = json.dumps({"gen": merged, "model": getattr(prov, "model", prov.id),
+                      "model_revision": getattr(prov, "revision", None),
+                      "dataset_protocol": _dataset_protocol_key(_DS())},
+                     sort_keys=True, default=str)
     assert hashlib.sha1(sig.encode()).hexdigest()[:12] in str(p1)
 
 
@@ -275,6 +279,66 @@ def test_nejm_case_image_reaches_the_doctor():
     pred = asyncio.run(ad.rollout(sample, doc))
     assert doc.seen[1].images == ["https://x/case.png"]   # first user turn carries the image
     assert pred.rollouts[0]["success"] is True
+
+
+def test_agentclinic_measurement_agent_is_actually_invoked():
+    """P0-3: support['measurement'] must be consulted, not silently ignored.
+    Previously _measurement() was a sync rule-based method that never read
+    support at all — a configured measurement model never ran."""
+    osce = {"OSCE_Examination": {
+        "Objective_for_Doctor": "Diagnose.",
+        "Test_Results": {"Blood_Tests": {"AChR_Antibodies": "elevated"}},
+        "Correct_Diagnosis": "Myasthenia gravis"}}
+
+    class _Measurer:
+        id = "measurer"
+
+        def __init__(self):
+            self.calls = 0
+
+        async def agenerate(self, messages, **gen):
+            self.calls += 1
+            return Generation(text="Antibody titer is elevated at 3.2x normal.")
+
+    measurer = _Measurer()
+    env = AgentClinicEnv(osce, max_turns=10, support={"measurement": measurer})
+
+    async def go():
+        await env.reset()
+        return await env.step("REQUEST TEST: Blood")
+    obs, *_ = asyncio.run(go())
+    assert measurer.calls == 1
+    assert "elevated at 3.2x" in obs
+
+    # NEJM path also consults it
+    nejm = {"physical_exams": "Butterfly rash, ANA positive.",
+            "answers": [{"text": "Lupus", "correct": True}]}
+    env2 = AgentClinicEnv(nejm, variant="nejm", support={"measurement": measurer})
+
+    async def go2():
+        await env2.reset()
+        return await env2.step("REQUEST IMAGES: rash")
+    obs2, *_ = asyncio.run(go2())
+    assert measurer.calls == 2
+
+
+def test_agentclinic_official_requires_all_three_support_roles():
+    """P0-3: split_type must require patient+measurement+moderator ALL present —
+    a single support role (or none) must not silently claim 'official'."""
+    from medeval.datasets.agent_env import AgentClinicAdapter
+    no_support = AgentClinicAdapter({"id": "a", "variant": "medqa"})
+    assert no_support.split_type == "approximated"
+    partial = AgentClinicAdapter({"id": "b", "variant": "medqa",
+                                  "support": {"patient": "p"}})
+    assert partial.split_type == "reimplementation"
+    full = AgentClinicAdapter({"id": "c", "variant": "medqa",
+                              "support": {"patient": "p", "measurement": "p",
+                                          "moderator": "m"}})
+    assert full.split_type == "official"
+    # an explicit override is still respected
+    override = AgentClinicAdapter({"id": "d", "variant": "medqa",
+                                   "support": {"patient": "p"}, "split_type": "demo"})
+    assert override.split_type == "demo"
 
 
 def test_agent_cache_key_tracks_rollout_protocol():

@@ -160,9 +160,24 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
               "run with --rebuild-from <meta_eval.jsonl URL/path> first")
         return 2
 
+    base_sig = {
+        "prompt_style": "healthbench_per_criterion",   # the only style calibrated today
+        "prompt_hash": cal.healthbench_prompt_hash(),
+        "calibration_set_hash": cal.calibration_set_hash(items),
+        "language": "en",
+        "task_family": "healthbench_meta",
+    }
     if args.labels:
         preds = cal.load_label_preds(args.labels)
         name = args.rater_name
+        # A labels file (strong-model / human pass) has no concrete, verifiable
+        # judge_model tied to it — leave it unset so this report is NEVER
+        # auto-applied to a live run's differently-configured judge (see
+        # Runner._row_judge_calibrated). It still renders as evidence that
+        # physician-equivalence is ACHIEVABLE; making it binding requires a
+        # live --config --judge run against the same concrete model.
+        signature = {**base_sig, "judge_model": None, "judge_revision": None,
+                    "rater_name": name}
     elif args.config and args.judge:
         if not any(it.completion for it in items):
             print(f"[medeval] live-judge mode needs the prose items file ({args.items}); "
@@ -177,11 +192,13 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         judge = create_provider(spec)
         preds = asyncio.run(cal.llm_judge_preds(items, judge))
         name = args.judge
+        signature = {**base_sig, "judge_model": getattr(judge, "model", judge.id),
+                    "judge_revision": getattr(judge, "revision", None)}
     else:
         print("[medeval] provide --labels <reviewer.jsonl> or (--config <run.yaml> --judge <model_id>)")
         return 2
 
-    report = cal.evaluate(items, preds, name)
+    report = cal.evaluate(items, preds, name, signature=signature)
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     (out / "calibration_report.json").write_text(

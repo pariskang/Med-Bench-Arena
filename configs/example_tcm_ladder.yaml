@@ -33,6 +33,7 @@ datasets:
     split: train
     field_map: {question: question, options: [A, B, C, D, E], answer: answer}
     answer_format: multi          # "C" and "ABCDE" both handled; blank trailing E dropped
+    split_type: official          # pinned + the full released text-MCQ set
     metrics: [mcq_accuracy]
 
   # --- multimodal: the FAITHFUL 4-option visual MCQ (舌象/中药) ---

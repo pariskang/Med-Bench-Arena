@@ -208,6 +208,7 @@ datasets:
     split: test
     field_map: {question: question, options: options, answer: answer_idx}
     answer_format: letter
+    split_type: official     # pinned + the real held-out test split
     metrics: [mcq_accuracy]
 
   - id: cmb_val                # CMB validation (280), Chinese — quick check

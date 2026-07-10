@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from medeval.datasets.agent_env import MedAgentBenchEnv, AgentClinicEnv, fhir_request
 from medeval.datasets.medagentbench_grader import parse_finish, builtin_grade
+from medeval.schema import Sample, TaskType
 
 
 class _FHIRHandler(BaseHTTPRequestHandler):
@@ -149,6 +150,63 @@ def test_real_get_post_finish_against_mock_fhir():
         srv.shutdown()
 
 
+def test_medagentbench_isolation_gates_split_type_and_concurrency():
+    """P0-6: without an episode_reset hook, MedAgentBench can never reach
+    'official' (even with the gated refsol) and concurrency is forced to 1 —
+    episodes share one live, unreset FHIR server."""
+    import warnings
+    from medeval.datasets.agent_env import MedAgentBenchAdapter
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        no_reset = MedAgentBenchAdapter({"id": "m", "source_url": "https://x/y.json"})
+        assert any("episode_reset" in str(x.message) for x in w)
+    assert no_reset.split_type == "approximated"
+    assert no_reset.effective_concurrency(8) == 1          # forced serial
+
+    with_reset = MedAgentBenchAdapter({
+        "id": "m2", "source_url": "https://x/y.json",
+        "episode_reset": {"url": "https://x/reset"}})
+    assert with_reset.split_type == "reimplementation"     # reset but no refsol
+    assert with_reset.effective_concurrency(8) == 8         # not forced down
+
+    forced = MedAgentBenchAdapter({
+        "id": "m3", "source_url": "https://x/y.json",
+        "allow_concurrent_episodes": True})
+    assert forced.effective_concurrency(8) == 8            # explicit opt-in honored
+
+    # explicit override is still respected regardless of reset/refsol presence
+    override = MedAgentBenchAdapter({
+        "id": "m4", "source_url": "https://x/y.json", "split_type": "official"})
+    assert override.split_type == "official"
+
+
+def test_medagentbench_episode_reset_called_before_each_episode():
+    """make_env() must invoke the configured reset hook — the one point where
+    every episode (each sample, each k>1 rollout) can get a clean FHIR state."""
+    from medeval.datasets.agent_env import MedAgentBenchAdapter
+
+    srv, base = _server()
+    calls = []
+    orig_do_post = _FHIRHandler.do_POST
+    def _tracked_post(self):
+        calls.append(self.path)
+        return orig_do_post(self)
+    _FHIRHandler.do_POST = _tracked_post
+    try:
+        ad = MedAgentBenchAdapter({
+            "id": "m", "source_url": "https://x/y.json",
+            "fhir_base": base, "episode_reset": {"url": f"{base}/$reset"}})
+        sample = Sample(id="m:0", task_type=TaskType.AGENT, messages=[],
+                        env_spec={"id": "task1_1", "instruction": "x", "context": ""})
+        ad.make_env(sample)
+        ad.make_env(sample)   # a second episode -> a second reset call
+        assert calls.count("/$reset") == 2
+    finally:
+        _FHIRHandler.do_POST = orig_do_post
+        srv.shutdown()
+
+
 def test_ungradable_tasks_excluded_from_pass_k():
     from medeval import Sample, TaskType, create_metric
     from medeval.schema import Generation, Prediction
@@ -232,6 +290,8 @@ def test_agentclinic_no_premature_commit_and_no_false_normal():
 if __name__ == "__main__":
     test_parse_finish_and_builtin_grade()
     test_real_get_post_finish_against_mock_fhir()
+    test_medagentbench_isolation_gates_split_type_and_concurrency()
+    test_medagentbench_episode_reset_called_before_each_episode()
     test_ungradable_tasks_excluded_from_pass_k()
     test_query_match_does_not_float_coerce_identifiers()
     test_action_parsing_tolerates_reasoning_preamble()

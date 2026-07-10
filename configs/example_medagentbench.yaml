@@ -20,9 +20,18 @@
 # For the OFFICIAL per-task rules, obtain the gated refsol.py (project Box link)
 # and set `refsol_path` below — it is called exactly as the upstream harness
 # does: getattr(refsol, task_id)(task, answer, fhir_base).
+#
+# ISOLATION RISK: every episode (each of the 300 tasks, and every k>1 rollout
+# of the same task) shares this ONE live FHIR server with no reset between them
+# — a POST from one episode can leak into a later episode's GETs. Without
+# `episode_reset` below, `run.concurrency` is forced to 1 for this dataset and
+# split_type is capped at `reimplementation`/`approximated` (never `official`,
+# even with refsol_path) — see the ISOLATION RISK note on MedAgentBenchAdapter.
+# If your FHIR image exposes a reset/reseed endpoint, wire it:
+#   episode_reset: {url: http://localhost:8080/fhir/$reset, method: POST}
 run:
   output_dir: ./results/medagentbench
-  concurrency: 4
+  concurrency: 4     # only takes effect if episode_reset (or allow_concurrent_episodes) is set below
   cache: true
 
 eval:
@@ -41,3 +50,5 @@ datasets:
     metrics: [pass_k]
     k: 1                         # the benchmark uses pass@1 by design
     # refsol_path: /path/to/refsol.py   # optional: official gated grader
+    # episode_reset: {url: http://localhost:8080/fhir/$reset, method: POST}  # if supported
+    # allow_concurrent_episodes: true   # opt into concurrency without episode_reset, at your own risk

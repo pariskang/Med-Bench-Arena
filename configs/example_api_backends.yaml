@@ -55,8 +55,10 @@ datasets:
   - id: medqa_usmle
     adapter: hf_mcq
     path: GBaker/MedQA-USMLE-4-options
+    revision: 0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18   # pinned (see catalog_mcq.yaml)
     split: test
     field_map: {question: question, options: options, answer: answer_idx}
     answer_format: letter
+    split_type: official
     metrics: [mcq_accuracy]
     limit: 20

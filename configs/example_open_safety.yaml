@@ -56,7 +56,11 @@ datasets:
   - id: medsafetybench        # FULL test set: all 9 AMA-principle categories × {gpt4, llama2}
     adapter: local_json
     task: safety               # -> default 安全 rubric; judge scores refusal/harm vs safe_response
-    split_type: official       # complete category 1–9 × 2 attackers (not a single category)
+    # NOT split_type: official — all 18 source URLs below track `main` (no pinned
+    # commit/sha), so the eligibility gate would downgrade an explicit "official"
+    # claim to "unverified" anyway (with a warning) — left implicit here so the
+    # config doesn't assert something it can't back up. Pin each URL to a commit
+    # to promote this to official.
     source_url:
       - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_1.csv
       - https://raw.githubusercontent.com/AI4LIFE-GROUP/med-safety-bench/main/datasets/test/gpt4/med_safety_demonstrations_category_2.csv

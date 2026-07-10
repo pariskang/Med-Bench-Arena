@@ -151,9 +151,11 @@ python -m medeval preflight configs/catalog_mcq.yaml --strict # CI: non-zero exi
 
 A parse rate below 100% means rows are being dropped (a mis-mapped `field_map`, an unexpected answer encoding, options that don't parse) — `preflight` lists them by reason so you fix the config, not the symptoms.
 
-- **Comparability tiers (`split_type`)** — every result row carries a `split_type` so *officially-comparable* runs never get mixed with internal ones on the leaderboard. The leaderboard renders **✅ Official** and **⚠️ Internal / non-comparable** as separate sections. Values: `official` · `validation` · `demo` · `sample` · `gated` · `approximated`. So **CMB-val** (validation), **TCMBench-demo** (demo), **CSEDB-sample** (sample), and **MedAgentBench's built-in grader** (approximated, unless you supply the official `refsol_path`) are clearly fenced off from a full official run.
+- **Comparability tiers (`split_type`)** — every result row carries a `split_type` so *officially-comparable* runs never get mixed with internal ones on the leaderboard. **`unverified` is the default** — a dataset must actively earn `official`; a YAML line alone can never grant it (see `medeval.eligibility`). The leaderboard renders **✅ Official** and **⚠️ Internal / non-comparable** as separate sections. Values: `official` · `validation` · `demo` · `sample` · `gated` · `approximated` · `reimplementation` · `unverified`. So **CMB-val** (validation), **TCMBench-demo** (demo), **CSEDB-sample** (sample), **MedAgentBench's built-in grader** (approximated, unless you supply the official `refsol_path`), and a partially-configured AgentClinic / any MediQ run (`reimplementation`, unless every support role is wired) are clearly fenced off from a full official run.
 - **Automated on every web session + CI** — a `SessionStart` hook (`.claude/`) installs deps and runs `preflight --strict` so each Claude-Code-on-the-web session profiles the eval set up front; GitHub Actions (`.github/workflows/ci.yml`) runs the offline test suite **and** `preflight --strict` as a data gate on every push/PR.
 - **Deterministic, resumable runs** — every `(model, dataset)` generation is cached on disk keyed by a **stable** hash of the model + its *effective* sampling params (`hashlib`, never the per-process-salted builtin `hash()`), so an interrupted full-dataset run (Colab timeout, spot preemption) **resumes from the last checkpoint** instead of regenerating from scratch. Progress shows **live** per-dataset bars (`tqdm`), generations are flushed to disk in batches of `checkpoint_every` (default 64 — friendly to Google Drive / network mounts), the leaderboard is rewritten after each dataset, and a crash-truncated cache line is skipped rather than poisoning the resume.
+- **Content-addressed cache — never scores a stale generation against new data.** The cache filename folds in the *entire* dataset protocol (revision, field_map, prompt template, instruction, adapter class + a hand-versioned `ADAPTER_PROTOCOL_VERSION`, and — for agents — `k`/`max_turns`/support-model identities), so any of those changing routes to a fresh cache file. On top of that, every cached record carries a hash of the *actual sample content* (rendered messages + choices + reference); if an unpinned source silently drifts upstream — same `sample_id`, different question/reference — that sample's hash no longer matches and it is regenerated rather than silently scored against a changed gold answer. Metric/rubric/judge config is deliberately **excluded** from the signature (scores are always recomputed fresh each run, never cached, so tweaking a rubric can't go stale — and doesn't waste a real generation call).
+- **`run_manifest.json`** — every run writes one: git commit, adapter-protocol version, the full run config (secrets redacted), and per-dataset resolved `split_type` + pin evidence + `preflight`-style load stats, and per-model resolved identity — so a leaderboard number can always be traced back to exactly what produced it.
 
 ---
 
@@ -282,16 +284,31 @@ and open-ended scores are kept **auxiliary** — exactly the conservative defaul
 enforces this: judge-scored datasets land in a separate *🧪 Auxiliary* tier until a calibration
 report marks the judge headline-eligible (`data/calibration/calibration_report.md`).
 
+**A calibration is bound to exactly what it measured — never a blanket "the judge is fine" pass.**
+Every report carries a `signature`: the concrete judge model + revision (live `--config --judge`
+mode only), and the grading prompt/protocol tested (today: the HealthBench per-criterion style).
+The leaderboard promotes a row out of Auxiliary only when *that row's own* judge model+revision
+and grading prompt **exactly match** the signature — calibrating `gpt-4.1` on HealthBench's
+English criteria does **not** grant headline status to `deepseek-r1`, or to a Chinese TCM 辨证/
+伦理/安全 dataset graded through the default (non-per-criterion) rubric prompt, even though a
+`calibrated: true` report exists on disk. A `--labels` pass (a strong-model/human blind review,
+not a live judge run) has no concrete judge to bind to at all, so it is **never auto-applied**
+to any run — it's reported as evidence that physician-equivalence is *achievable*, not as a
+live-verifiable guarantee; only `--config --judge <id>` produces a binding report.
+
 ```bash
 # regenerate the frozen physician-labeled set, then score a reviewer's blind labels
 python -m medeval calibrate --rebuild-from <oss_meta_eval.jsonl URL/path>
 python -m medeval calibrate --labels data/calibration/healthbench_meta_strongmodel_labels.jsonl
-# …or calibrate a live API judge against the same physician gold (same code path the leaderboard uses)
+# …or calibrate a live API judge against the same physician gold (same code path the leaderboard uses,
+# and the ONLY mode that produces a binding, leaderboard-honored signature):
 python -m medeval calibrate --config configs/example_open_safety.yaml --judge gpt-4.1 --strict
 ```
 
 > TCMEval-SDT / MTCMB ship no physician labels, so their open-ended scores inherit **auxiliary**
-> status until a TCM domain expert supplies a labels file — the harness scores it identically.
+> status until a TCM domain expert supplies a labels file — the harness scores it identically,
+> but as a *separate* calibration bound to that dataset's own judge + prompt signature, not
+> inherited from HealthBench's.
 
 ---
 
@@ -299,9 +316,9 @@ python -m medeval calibrate --config configs/example_open_safety.yaml --judge gp
 
 The doctor agent runs the same `ModelProvider` policy inside an `AgentEnvironment(reset/step)` loop.
 
-- **AgentClinic** — OSCE (MedQA) + image cases (NEJM). Patient / measurement / moderator run as their own LLMs via `support:` (the faithful setup), or rule-based offline.
-- **MediQ** — proactive information-seeking: the doctor asks the patient for atomic facts (revealed only on a relevant question) or commits with `ANSWER: <letter>`.
-- **MedAgentBench** — a **real FHIR EHR server**. The agent emits `GET <url>` / `POST <url>\n<json>` / `FINISH([...])`; scoring uses the official gated `refsol.py` (set `refsol_path`) **or** a built-in **per-task payload grader** that validates `resourceType` + `subject → Patient/{MRN}` + the right flowsheet/SNOMED/NDC/LOINC code. Conservative by design — never a false pass.
+- **AgentClinic** — OSCE (MedQA) + image cases (NEJM). Patient / measurement / moderator run as their own LLMs via `support:`, or rule-based offline. `split_type` reflects protocol fidelity, not a config wish: **all three** roles present → `official`; some but not all → `reimplementation`; none → `approximated` — a config can't claim the faithful setup by only wiring one role.
+- **MediQ** — proactive information-seeking: the doctor asks the patient for atomic facts (revealed only on a relevant question), commits with `ANSWER: <letter>` (optionally `(confidence: NN%)`), or `ABSTAIN` when the evidence is genuinely insufficient. `pass_k` additionally reports `abstain_rate`, `avg_questions` (question efficiency), and `mean_confidence` / `confidence_brier_score` (calibration) when the doctor states one. Never `official` by default — the rule-based patient is `approximated`, an LLM patient is `reimplementation` (neither replicates MediQ's original Patient/Expert System prompts verbatim); only an explicit config override claims `official`, and that claim is on the operator, not the harness.
+- **MedAgentBench** — a **real FHIR EHR server**. The agent emits `GET <url>` / `POST <url>\n<json>` / `FINISH([...])`; scoring uses the official gated `refsol.py` (set `refsol_path`) **or** a built-in **per-task payload grader** that validates `resourceType` + `subject → Patient/{MRN}` + the right flowsheet/SNOMED/NDC/LOINC code. Conservative by design — never a false pass. **Isolation risk**: every episode shares one live, unreset FHIR server by default (a write can leak into a later episode's reads) — concurrency is forced to 1 and `split_type` capped below `official` until you wire an `episode_reset` hook.
 
 ```bash
 docker run -p 8080:8080 jyxsu6/medagentbench:latest          # serves :8080/fhir
@@ -391,7 +408,8 @@ medeval/
 ├── datasets/                  # hf_mcq · local_json · agent_env · tcmbench · medbench · medagentbench_grader
 ├── metrics/                   # mcq · llm_judge · text_match · prescription · syndrome · tcm_struct · numeric
 ├── kg/tcm_classics.py         # 经典文献 knowledge graph (JSON / Turtle / GraphML)
-├── runner.py                  # orchestrator
+├── eligibility.py              # official-tier gate: pin evidence for content adapters
+├── runner.py                  # orchestrator; content-addressed cache + run_manifest.json
 ├── distributed.py             # sharding · merge · local/Ray/Slurm
 ├── submit.py                  # OpenCompass / MedBench export
 ├── assets.py                  # auto download + unzip images.zip

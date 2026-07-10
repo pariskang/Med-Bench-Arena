@@ -74,6 +74,7 @@ datasets:
     options_inline: true
     field_map: {question: 题干, options: 选项, answer: 答案}
     answer_format: multi
+    split_type: official     # pinned + the full released set
     metrics: [mcq_accuracy]
 
   # ================ Medical ethics — open-ended (rubric / judge) ===============

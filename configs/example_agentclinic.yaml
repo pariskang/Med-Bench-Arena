@@ -36,7 +36,10 @@ datasets:
     max_turns: 20             # AgentClinic's default inference budget
     k: 3                      # rollouts per case for pass^k
     metrics: [pass_k]
-    # Faithful multi-agent dialogue (omit for offline scripted patient/moderator):
+    # Faithful multi-agent dialogue (omit for offline scripted patient/measurement/
+    # moderator). split_type: official requires ALL THREE roles present here —
+    # patient-only or patient+moderator (no measurement) lands in the
+    # intermediate `reimplementation` tier, not `official`.
     # support: {patient: patient, measurement: patient, moderator: moderator}
 
   - id: agentclinic_nejm      # FULL released NEJM image-case set (120 cases). Needs a

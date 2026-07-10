@@ -80,6 +80,24 @@ def _majority_positive(labels: list[bool]) -> bool:
     return sum(1 for x in labels if x) > len(labels) / 2
 
 
+def calibration_set_hash(items: list[CalItem]) -> str:
+    """Identity of the frozen item set this report was measured against —
+    part of the signature so a report can't silently be reused for a
+    differently-sampled calibration set."""
+    ids = sorted(it.item_id for it in items)
+    return hashlib.sha1("|".join(ids).encode()).hexdigest()[:16]
+
+
+def healthbench_prompt_hash() -> str:
+    """Hash of the verbatim HealthBench per-criterion grader template — the
+    ONLY grading prompt today's calibration tooling exercises (see
+    ``llm_judge_preds``). Part of the signature: a dataset scored through the
+    leaderboard's DEFAULT (non-per-criterion) rubric prompt was never measured
+    and must not inherit this calibration."""
+    from .metrics.llm_judge import _HEALTHBENCH_GRADER
+    return hashlib.sha1(_HEALTHBENCH_GRADER.encode()).hexdigest()[:16]
+
+
 def build_meta_set(source: str, items_path: str | Path, gold_path: str | Path,
                    n: int = 120, cap_per_cat: int = 6, class_frac: float = 0.56
                    ) -> int:
@@ -320,9 +338,18 @@ def per_category(items: list[CalItem], preds: dict[str, bool]) -> list[dict[str,
 # ---------------------------------------------------------------------------
 # Top-level evaluation + verdict
 # ---------------------------------------------------------------------------
-def evaluate(items: list[CalItem], preds: dict[str, bool], rater_name: str
-             ) -> dict[str, Any]:
-    """Full agreement report for one rater against the physician panel."""
+def evaluate(items: list[CalItem], preds: dict[str, bool], rater_name: str,
+             signature: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Full agreement report for one rater against the physician panel.
+
+    ``signature`` binds this report to exactly what was measured — which judge
+    model+revision (live-judge mode only; a --labels rater has no concrete
+    judge_model and so can never auto-satisfy a live run's calibration check),
+    which grading prompt/protocol, and which calibration set — so
+    ``Runner._row_judge_calibrated`` can require a leaderboard row's actual
+    judge usage to match before inheriting headline eligibility. See
+    ``cli.cmd_calibrate`` for how it's built.
+    """
     scored = [it for it in items if it.item_id in preds]
     rpairs = rater_pairs(items, preds)
     ppairs = physician_pairs(items)
@@ -386,6 +413,7 @@ def evaluate(items: list[CalItem], preds: dict[str, bool], rater_name: str
             "reasons": reasons,
         },
         "per_category": per_category(items, preds),
+        "signature": signature or {},
     }
 
 
@@ -453,13 +481,30 @@ def render_report(report: dict[str, Any], dataset: str = "HealthBench meta-eval"
     r = report["rater_vs_physician"]
     p = report["physician_ceiling"]
     v = report["verdict"]
+    sig = report.get("signature") or {}
     headline = "✅ headline-eligible" if v["calibrated"] else "⚠️ AUXILIARY only"
     equiv = "✅ yes" if v.get("physician_equivalent") else "❌ no"
+    if sig.get("judge_model"):
+        binding = (f"**Binding to:** judge `{sig['judge_model']}`"
+                  + (f" @ `{sig['judge_revision']}`" if sig.get("judge_revision") else "")
+                  + f", prompt `{sig.get('prompt_style', '?')}` — a leaderboard row only "
+                  "inherits this verdict when it used the SAME judge model+revision and "
+                  "the SAME grading prompt; every other judge/prompt/dataset combination "
+                  "stays auxiliary regardless of this result.")
+    else:
+        binding = (f"**Not judge-bound** (rater `{sig.get('rater_name', report['rater'])}` "
+                  "has no concrete judge_model — e.g. a --labels pass). This report is "
+                  "**informational only**: it demonstrates physician-equivalence is "
+                  "*achievable*, but is never auto-applied to any live run's judge. Run "
+                  "`medeval calibrate --config <run.yaml> --judge <id>` against the exact "
+                  "judge model you intend to use to make a binding, leaderboard-honored report.")
     L = [
         f"# Judge calibration — {report['rater']}",
         "",
         f"**Dataset:** {dataset} · physician-labeled · "
         f"**{report['n_items']} items reviewed** (of {report['n_items_total']}).",
+        "",
+        binding,
         "",
         f"## Verdict: open-ended scores are **{headline}**",
         "",

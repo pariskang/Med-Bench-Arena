@@ -153,6 +153,92 @@ def test_leaderboard_demotes_uncalibrated_judge():
         assert "medqa" in md.split("Auxiliary (open-ended")[0]
 
 
+# --- P0-7: calibration must bind to a judge model + prompt signature --------
+def test_evaluate_stores_signature():
+    items = [CalItem(item_id=f"i{i}", prompt=[], completion="", rubric="", category="c",
+                     physician_labels=[True, True]) for i in range(3)]
+    preds = {f"i{i}": True for i in range(3)}
+    sig = {"judge_model": "gpt-4.1", "judge_revision": None,
+          "prompt_style": "healthbench_per_criterion"}
+    rep = evaluate(items, preds, "gpt-4.1", signature=sig)
+    assert rep["signature"] == sig
+    # backward compatible: omitting signature stores {}
+    rep2 = evaluate(items, preds, "gpt-4.1")
+    assert rep2["signature"] == {}
+
+
+def _calibrated_report(judge_model="gpt-4.1", judge_revision=None,
+                       prompt_style="healthbench_per_criterion"):
+    return {"verdict": {"calibrated": True},
+           "signature": {"judge_model": judge_model, "judge_revision": judge_revision,
+                        "prompt_style": prompt_style}}
+
+
+def test_row_judge_calibrated_requires_matching_judge_and_prompt():
+    from medeval.runner import _row_judge_calibrated
+
+    report = _calibrated_report()
+    matching = {"judge_signature": {"judge_model": "gpt-4.1", "judge_revision": None,
+                                    "prompt_style": "healthbench_per_criterion"}}
+    assert _row_judge_calibrated(matching, report) is True
+
+    # a DIFFERENT judge model must not inherit someone else's calibration
+    other_judge = {"judge_signature": {"judge_model": "deepseek-r1", "judge_revision": None,
+                                       "prompt_style": "healthbench_per_criterion"}}
+    assert _row_judge_calibrated(other_judge, report) is False
+
+    # the SAME judge but the default (non-per-criterion) prompt is a different,
+    # never-measured protocol -> must not inherit either
+    other_prompt = {"judge_signature": {"judge_model": "gpt-4.1", "judge_revision": None,
+                                        "prompt_style": "default_rubric"}}
+    assert _row_judge_calibrated(other_prompt, report) is False
+
+    # a row with no judge_signature at all (e.g. a non-judge metric) is never calibrated
+    assert _row_judge_calibrated({}, report) is False
+
+    # an uncalibrated report (verdict.calibrated False) never grants anything
+    uncal = _calibrated_report(); uncal["verdict"]["calibrated"] = False
+    assert _row_judge_calibrated(matching, uncal) is False
+
+    # a labels-mode report (no concrete judge_model) NEVER auto-binds, even to
+    # a row whose judge id happens to equal the rater_name by coincidence
+    labels_report = {"verdict": {"calibrated": True},
+                     "signature": {"judge_model": None, "rater_name": "strong-model judge",
+                                  "prompt_style": "healthbench_per_criterion"}}
+    assert _row_judge_calibrated(matching, labels_report) is False
+
+
+def test_leaderboard_honors_matching_judge_signature_only():
+    """End-to-end: a row bound to the SAME judge+prompt as a calibrated report
+    is promoted out of Auxiliary; a row with a different judge stays auxiliary
+    even though *a* calibration report with calibrated=True exists on disk."""
+    from medeval.runner import write_leaderboard
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "calibration_report.json").write_text(
+            json.dumps(_calibrated_report(judge_model="gpt-4.1")), encoding="utf-8")
+        rows = [
+            {"model": "m", "dataset": "healthbench", "n": 10, "split_type": "official",
+             "metrics": {"llm_judge": {"judge_score": 0.7, "n": 10}}, "model_cost_usd": 0.0,
+             "judge_signature": {"judge_model": "gpt-4.1", "judge_revision": None,
+                                 "prompt_style": "healthbench_per_criterion"}},
+            {"model": "m", "dataset": "tcmeval_sdt", "n": 10, "split_type": "official",
+             "metrics": {"llm_judge": {"judge_score": 0.8, "n": 10}}, "model_cost_usd": 0.0,
+             "judge_signature": {"judge_model": "deepseek-r1", "judge_revision": None,
+                                 "prompt_style": "default_rubric"}},
+        ]
+        write_leaderboard(rows, d)
+        md = (d / "leaderboard.md").read_text()
+        # "Auxiliary" appears twice (section header + the note's own boilerplate
+        # text) — split on the section marker "###" heading instead, which is
+        # unique per dataset.
+        assert md.index("### healthbench") < md.index("🧪 Auxiliary")
+        # the matching-signature row is promoted to a ranked (non-auxiliary) section
+        assert "healthbench" in md.split("🧪 Auxiliary")[0]
+        # the mismatched-judge/prompt row still shows up only in Auxiliary
+        assert md.index("🧪 Auxiliary") < md.index("### tcmeval_sdt")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

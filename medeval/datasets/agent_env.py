@@ -309,7 +309,7 @@ class AgentClinicEnv(AgentEnvironment):
                     {"success": success, "diagnosis": dx, "correct": self.correct})
         done = self.turns_left <= 0
         if "REQUEST TEST" in up or "REQUEST IMAGES" in up:
-            obs = self._measurement(action)
+            obs = await self._measurement(action)
         else:
             obs = await self._patient(action)
         # tell the doctor the budget so it can commit before running out of turns
@@ -349,10 +349,37 @@ class AgentClinicEnv(AgentEnvironment):
         text = " ".join(b for b in bits if b)
         return text[:400] or "I just don't feel well, doctor."
 
-    def _measurement(self, action: str) -> str:
+    async def _measurement(self, action: str) -> str:
+        """The measurement/imaging agent. AgentClinic's original design gives this
+        its own LLM (distinct from the patient) that reveals test/imaging results
+        on request — it was previously wired to read ``support['measurement']``
+        in the config but the method was never async and never actually consulted
+        it, so a configured measurement model silently went unused and every run
+        fell through to the scripted branch. Fixed: call it when provided."""
+        prov = self.support.get("measurement")
         if self.nejm:  # flat NEJM record: physical_exams string
             pe = str(self.nejm_rec.get("physical_exams", ""))
+            if prov is not None:
+                g = await prov.agenerate(
+                    [Message("system", "You are the clinical measurement/imaging system. Given "
+                             "the patient's actual exam/imaging findings below, answer the "
+                             "doctor's specific request with ONLY the relevant result(s); if the "
+                             "requested test was not performed, say so explicitly — never invent "
+                             "a normal result. Findings: " + pe),
+                     Message("user", action)], temperature=0.0, max_tokens=128)
+                return f"RESULTS: {g.text}"
             return f"RESULTS: {pe}" if pe else "RESULTS: NORMAL READINGS"
+        if prov is not None:
+            sys = ("You are the clinical measurement/imaging system. Given the patient's actual "
+                   "test results and physical-exam findings below, answer the doctor's specific "
+                   "request with ONLY the relevant result(s); if the requested test/exam was not "
+                   "performed, say so explicitly — never invent a normal result. Test results: " +
+                   json.dumps(self.osce.get("Test_Results", {}), ensure_ascii=False) +
+                   " Physical exam: " +
+                   json.dumps(self.osce.get("Physical_Examination_Findings", {}), ensure_ascii=False))
+            g = await prov.agenerate([Message("system", sys), Message("user", action)],
+                                     temperature=0.0, max_tokens=128)
+            return f"RESULTS: {g.text}"
         results = self.osce.get("Test_Results", {})
         req = action.split(":", 1)[-1].strip().lower() if ":" in action else ""
         flat = self._flatten(results)
@@ -419,10 +446,22 @@ class AgentClinicAdapter(AgentAdapter):
         super().__init__(config)
         self.source_url = config.get("source_url", self.DEFAULT_URL)
         self.variant = config.get("variant", "medqa")
-        # scripted (rule-based) patient/moderator is an approximation; the faithful
-        # multi-agent setup needs LLM `support:` (unless split_type is pinned)
+        # Faithful AgentClinic runs ALL THREE roles (patient / measurement /
+        # moderator) as their own LLM — that is the original multi-agent setup
+        # the paper evaluates. A config with NO support: is fully scripted
+        # (approximated). A config with SOME but not all three roles is a
+        # partial reimplementation: better than scripted, but not proven to
+        # match the paper's exact multi-agent behavior, so it must not silently
+        # claim "official" either — that was the bug (`support_spec` truthy at
+        # all, e.g. only `patient` set, used to be enough to claim official).
         if "split_type" not in config:
-            self.split_type = "official" if self.support_spec else "approximated"
+            required_roles = {"patient", "measurement", "moderator"}
+            if required_roles.issubset(self.support_spec):
+                self.split_type = "official"
+            elif self.support_spec:
+                self.split_type = "reimplementation"
+            else:
+                self.split_type = "approximated"
 
     def load(self) -> list[Sample]:
         h = hashlib.sha256(self.source_url.encode()).hexdigest()[:16]
@@ -589,9 +628,26 @@ class MedAgentBenchAdapter(AgentAdapter):
       max_turns:   rounds (paper: 8; repo config: 5)
       refsol_path: path to the official (gated) refsol.py grader; if omitted the
                    built-in grader is used (query tasks exact; action tasks approx)
+      episode_reset: {url: <reset-endpoint>, method: POST|GET, body: {...}} — called
+                   before EVERY episode (each sample, each rollout) if your FHIR
+                   server exposes a snapshot/rollback or reseed endpoint.
+      allow_concurrent_episodes: bool — opt in to running episodes concurrently
+                   against the shared server without a reset hook, at your own risk
+                   (default false: concurrency is forced to 1 for this dataset).
 
     Needs a running FHIR server (Docker image jyxsu6/medagentbench on :8080) to
     actually exercise GET/POST. See the README for the docker command.
+
+    ISOLATION RISK: every episode (every sample, and every k>1 rollout of the
+    same sample) shares ONE live FHIR server with no snapshot/rollback between
+    them by default — a POST from one episode is visible to the next episode's
+    GETs. The official Stanford harness runs per-task workers against isolated
+    state, not a bare shared endpoint reused across the whole run; this adapter
+    cannot reproduce that isolation on its own. Without `episode_reset`,
+    concurrency is forced to 1 (reduces, does not eliminate, cross-episode
+    interference) and split_type can reach at most `reimplementation` — never
+    `official`, even with the gated `refsol.py` grader, since a correct grader
+    scoring state corrupted by a prior episode is still an unreliable number.
     """
 
     DEFAULT_URL = ("https://raw.githubusercontent.com/stanfordmlgroup/"
@@ -606,15 +662,60 @@ class MedAgentBenchAdapter(AgentAdapter):
         self.fhir_base = config.get("fhir_base", "http://localhost:8080/fhir")
         self.max_turns = int(config.get("max_turns", 8))
         self.refsol_path = config.get("refsol_path")
+        self.episode_reset = config.get("episode_reset")
+        self.allow_concurrent_episodes = bool(config.get("allow_concurrent_episodes", False))
         self._funcs: list | None = None
         self._refsol = None
         if self.refsol_path:
             from .medagentbench_grader import load_refsol
             self._refsol = load_refsol(self.refsol_path)
-        # the built-in grader is an approximation; only the official gated refsol
-        # is leaderboard-comparable (unless the user pins split_type explicitly)
+        if not self.episode_reset:
+            import warnings
+            warnings.warn(
+                f"{self.id}: no episode_reset configured — every sample (and every "
+                "k>1 rollout of the same sample) shares ONE live FHIR server with no "
+                "snapshot/rollback between episodes. A write from one episode can leak "
+                "into a later episode's reads, corrupting results — the official "
+                "Stanford harness isolates state per task worker; this shared-endpoint "
+                "setup cannot. Provide `episode_reset: {url: <reset-endpoint>}` if your "
+                "server exposes one. Concurrency is forced to 1 for this dataset and "
+                "split_type is capped below 'official' until you do.", stacklevel=2)
+        # the built-in grader is an approximation; the gated refsol is leaderboard-
+        # comparable ONLY together with proven episode isolation — a correct grader
+        # scoring state corrupted by a prior unreset episode is still unreliable.
         if "split_type" not in config:
-            self.split_type = "official" if self.refsol_path else "approximated"
+            if self.refsol_path and self.episode_reset:
+                self.split_type = "official"
+            elif self.refsol_path or self.episode_reset:
+                self.split_type = "reimplementation"
+            else:
+                self.split_type = "approximated"
+
+    def effective_concurrency(self, requested: int) -> int:
+        """Cap the rollout semaphore for THIS dataset (Runner._predict consults
+        this) — without a reset hook, concurrent episodes racing against the
+        same FHIR patient state is a correctness risk, not just a slowdown."""
+        if self.episode_reset or self.allow_concurrent_episodes or requested <= 1:
+            return requested
+        import warnings
+        warnings.warn(
+            f"{self.id}: forcing concurrency 1 (requested {requested}) — concurrent "
+            "MedAgentBench episodes with no episode_reset would race against the same "
+            "live FHIR patient state. Set allow_concurrent_episodes: true to override "
+            "at your own risk, or episode_reset to run safely in parallel.", stacklevel=2)
+        return 1
+
+    def _call_episode_reset(self) -> None:
+        spec = self.episode_reset
+        if not spec:
+            return
+        try:
+            fhir_request(spec["url"], spec.get("method", "POST"), spec.get("body"))
+        except Exception as e:
+            import warnings
+            warnings.warn(f"{self.id}: episode_reset call failed ({type(e).__name__}: {e}) — "
+                          "proceeding WITHOUT a guaranteed-clean FHIR state for this episode.",
+                          stacklevel=2)
 
     def _load_funcs(self) -> list:
         if self._funcs is None:
@@ -640,6 +741,9 @@ class MedAgentBenchAdapter(AgentAdapter):
         return out
 
     def make_env(self, sample: Sample, support=None) -> AgentEnvironment:
+        # Called once per episode (once per sample, and once per k>1 rollout) —
+        # the natural single injection point for a pre-episode state reset.
+        self._call_episode_reset()
         grader = (support or {}).get("grader")
         return MedAgentBenchEnv(sample.env_spec, self.fhir_base, max_rounds=self.max_turns,
                                 funcs=self._funcs or [], grader=grader, refsol=self._refsol)
@@ -677,7 +781,10 @@ class MediQEnv(AgentEnvironment):
         return (
             "You are a physician with limited initial information. Each turn, either ASK the "
             "patient ONE question to gather more information, or COMMIT to a final choice "
-            "with 'ANSWER: <letter>'. Only ask what you need.\n"
+            "with 'ANSWER: <letter>', or — if you judge the available information genuinely "
+            "insufficient to decide reliably — 'ABSTAIN' instead of guessing. Only ask what "
+            "you need. Optionally state your confidence after committing, e.g. "
+            "'ANSWER: B (confidence: 80%)'.\n"
             f"Question: {self.s.get('question', '')}\n{opts}\n"
             f"You may ask at most {self.max_questions} questions before you must answer."
         )
@@ -686,11 +793,23 @@ class MediQEnv(AgentEnvironment):
         return f"Initial information: {self.initial}\nAsk a question, or commit with 'ANSWER: <letter>'."
 
     async def step(self, action: str):
+        conf = self._confidence(action)
+        if self._is_abstain(action):
+            # A deliberate non-answer, distinct from a wrong guess: the doctor
+            # judged the evidence insufficient rather than committing blind.
+            # Scored as a non-pass (reward 0) but flagged `abstained` so the
+            # aggregate reports an abstention rate instead of folding it into
+            # "wrong answer" — MediQ's construct is proactive info-seeking
+            # *and* knowing when NOT to answer, not forced-choice accuracy alone.
+            return ("", 0.0, True,
+                    {"success": False, "abstained": True, "questions": self.questions,
+                     **({"confidence": conf} if conf is not None else {})})
         letter = self._commit_letter(action)
         if letter:
             ok = letter == self.gold
             return ("", 1.0 if ok else 0.0, True,
-                    {"success": ok, "answered": True, "questions": self.questions, "choice": letter})
+                    {"success": ok, "answered": True, "questions": self.questions,
+                     "choice": letter, **({"confidence": conf} if conf is not None else {})})
         self.questions += 1
         if self.questions >= self.max_questions:  # forced final answer
             guess = self._any_letter(action)
@@ -737,6 +856,22 @@ class MediQEnv(AgentEnvironment):
         m = re.search(r"(?<![A-Za-z])([A-E])(?![A-Za-z])", action or "")
         return m.group(1).upper() if m else None
 
+    @staticmethod
+    def _is_abstain(action: str) -> bool:
+        return bool(re.search(r"\bABSTAIN\b|不(?:能|予)?回答|无法确定作答", action or "", re.IGNORECASE))
+
+    @staticmethod
+    def _confidence(action: str) -> float | None:
+        """Optional self-reported confidence following a commit, e.g.
+        'ANSWER: B (confidence: 80%)' or 'Confidence: 0.8' -> 0.8. Returns None
+        if the doctor didn't state one (confidence reporting is optional, so
+        calibration metrics only cover the subset that do)."""
+        m = re.search(r"confidence\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%", action or "", re.IGNORECASE)
+        if m:
+            return max(0.0, min(1.0, float(m.group(1)) / 100.0))
+        m = re.search(r"confidence\s*[:：]?\s*(0?\.\d+|1(?:\.0+)?)", action or "", re.IGNORECASE)
+        return max(0.0, min(1.0, float(m.group(1)))) if m else None
+
 
 @register_dataset("mediq")
 class MediQAdapter(AgentAdapter):
@@ -744,7 +879,17 @@ class MediQAdapter(AgentAdapter):
       source_url:  MediQ jsonl (default all_dev_good.jsonl)
       max_questions: question budget per episode (default 15)
       support:     {patient: <model_id>}  optional LLM patient; else scripted (offline)
-    Scored with pass_k (pass@1 = accuracy; aggregate also reports avg_turns / timeout_rate)."""
+    Scored with pass_k (pass@1 = accuracy; aggregate also reports avg_turns /
+    avg_questions / abstain_rate / timeout_rate, and mean_confidence /
+    confidence_brier_score when the doctor states a confidence).
+
+    split_type is capped at "reimplementation", NEVER auto-"official": neither
+    the rule-based patient (nearest-atomic-fact-by-word-overlap) nor an LLM
+    patient here replicate MediQ's original Patient System / adaptive Expert
+    System prompts verbatim, so "official" cannot be earned by config alone —
+    an explicit override is honored (and up to the operator to justify), but
+    the code will never grant it automatically.
+    """
 
     DEFAULT_URL = "https://raw.githubusercontent.com/stellalisy/MediQ/main/data/all_dev_good.jsonl"
 
@@ -753,6 +898,11 @@ class MediQAdapter(AgentAdapter):
         self.source_url = config.get("source_url", self.DEFAULT_URL)
         self.max_questions = int(config.get("max_questions", config.get("max_turns", 15)))
         self.max_turns = self.max_questions + 1
+        if "split_type" not in config:
+            # rule-based token-overlap patient = approximated; an LLM patient is a
+            # from-scratch reimplementation of the protocol (not verified to match
+            # the paper's exact prompts) — either way, never "official" by default.
+            self.split_type = "reimplementation" if self.support_spec else "approximated"
 
     def load(self) -> list[Sample]:
         h = hashlib.sha256(self.source_url.encode()).hexdigest()[:16]
