@@ -87,15 +87,22 @@ class SyndromeChain(Metric):
             components.append((ff, self.w_final))
 
         wsum = sum(w for _, w in components)
+        if not components:
+            # no gold at all (no 证型/病机/辨证 reference): nothing to score against —
+            # excluded from the aggregate rather than counted as a hard 0.
+            return Score(metric="syndrome_chain", value=None,
+                         detail={"skipped": "no_gold"})
         value = sum(s * w for s, w in components) / wsum if wsum else 0.0
         detail["chain_score"] = value
         return Score(metric="syndrome_chain", value=value, detail=detail)
 
     def aggregate(self, scores: list[Score]) -> dict[str, Any]:
-        n = len(scores) or 1
-        out = {"chain_score": sum(s.value for s in scores) / n, "n": len(scores)}
+        vals = [s.value for s in scores if s.value is not None]
+        out = {"chain_score": sum(vals) / len(vals) if vals else 0.0,
+               "n": len(scores), "n_scored": len(vals),
+               "skipped_no_gold": len(scores) - len(vals)}
         for key in ("syndrome_f1", "syndrome_recall", "pathogenesis_f1", "final_f1"):
-            vals = [s.detail[key] for s in scores if key in s.detail]
-            if vals:
-                out[key] = sum(vals) / len(vals)
+            kvals = [s.detail[key] for s in scores if key in s.detail]
+            if kvals:
+                out[key] = sum(kvals) / len(kvals)
         return out

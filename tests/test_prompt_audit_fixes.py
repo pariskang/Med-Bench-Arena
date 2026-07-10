@@ -217,6 +217,111 @@ def test_prescription_drops_prep_words():
     assert "加减" not in herbs and "水煎服" not in herbs
 
 
+# --------------------------------------------------------------------------
+# --models filter vs agent support models / missing support fails loudly
+# --------------------------------------------------------------------------
+def test_models_filter_keeps_agent_support_models():
+    from medeval.cli import _apply_model_filter
+
+    cfg = {
+        "models": [
+            {"id": "doctor", "type": "mock", "behavior": "auto"},
+            {"id": "other", "type": "mock", "behavior": "auto"},
+            {"id": "patient", "type": "mock", "behavior": "auto"},
+            {"id": "judge", "type": "mock", "behavior": "auto", "judge_only": True},
+        ],
+        "datasets": [{"id": "clinic", "adapter": "agentclinic",
+                      "support": {"patient": "patient", "moderator": "patient"}}],
+    }
+    missing = _apply_model_filter(cfg, "doctor")
+    assert missing == []
+    kept = {m["id"]: m for m in cfg["models"]}
+    # requested candidate + judge + support model all survive; 'other' is dropped
+    assert set(kept) == {"doctor", "judge", "patient"}
+    # the support model serves its role but is NOT evaluated as a candidate
+    assert kept["patient"]["judge_only"] is True
+    assert not kept["doctor"].get("judge_only")
+    # unknown ids are reported
+    assert _apply_model_filter(dict(cfg), "doctor,nope") == ["nope"]
+
+
+def test_nejm_case_image_reaches_the_doctor():
+    """B1: NEJM image cases must attach the case image to the doctor's first
+    observation — otherwise a vision benchmark silently runs blind on text."""
+    from medeval.datasets.agent_env import AgentClinicAdapter
+
+    scenario = {"question": "What is the diagnosis?", "image_url": "https://x/case.png",
+                "patient_info": "A 30-year-old with a butterfly rash.",
+                "physical_exams": "ANA positive",
+                "answers": [{"text": "Lupus", "correct": True}]}
+    env = AgentClinicEnv(scenario, variant="nejm")
+    assert env.initial_images == ["https://x/case.png"]
+    # OSCE (medqa) cases have no image -> None
+    assert AgentClinicEnv({"OSCE_Examination": {}}, variant="medqa").initial_images is None
+
+    class _Doctor:
+        id = "stub-doctor"
+
+        def __init__(self):
+            self.seen = None
+
+        async def agenerate(self, messages, **gen):
+            self.seen = messages
+            return Generation(text="DIAGNOSIS READY: Lupus")
+
+    ad = AgentClinicAdapter({"id": "nejm", "variant": "nejm", "k": 1})
+    sample = Sample(id="nejm:0", task_type=TaskType.AGENT, messages=[], env_spec=scenario)
+    doc = _Doctor()
+    pred = asyncio.run(ad.rollout(sample, doc))
+    assert doc.seen[1].images == ["https://x/case.png"]   # first user turn carries the image
+    assert pred.rollouts[0]["success"] is True
+
+
+def test_agent_cache_key_tracks_rollout_protocol():
+    """B2: editing k / max_turns / support must invalidate the agent cache —
+    otherwise a k:1->3 re-run reuses rollout lists of the old length."""
+    def _runner(k, max_turns=20, support=None):
+        ds = {"id": "demo", "adapter": "agent_demo", "k": k, "max_turns": max_turns}
+        if support:
+            ds["support"] = support
+        return Runner({"models": [{"id": "m", "type": "mock", "behavior": "auto"}],
+                       "datasets": [ds], "run": {"cache": True}})
+
+    def _path(r):
+        return r._cache_path(next(iter(r.providers.values())), r.datasets[0]).name
+
+    base = _path(_runner(1))
+    assert base != _path(_runner(3))                       # k change -> new cache
+    assert base != _path(_runner(1, max_turns=5))          # max_turns change -> new cache
+    assert base != _path(_runner(1, support={"patient": "m"}))  # support change -> new cache
+    assert base == _path(_runner(1))                       # unchanged -> stable (resume works)
+    # non-agent datasets keep their existing cache keys (no gratuitous invalidation)
+    r_mcq = Runner({"models": [{"id": "m", "type": "mock", "behavior": "auto"}],
+                    "datasets": [], "run": {"cache": True}})
+    mcq_ds = _mcq()
+    assert r_mcq._cache_path(next(iter(r_mcq.providers.values())), mcq_ds).name \
+        == r_mcq._cache_path(next(iter(r_mcq.providers.values())), mcq_ds).name
+
+
+def test_missing_agent_support_model_fails_loudly():
+    runner = Runner({"models": [{"id": "doctor", "type": "mock", "behavior": "auto"}],
+                     "datasets": [], "run": {"cache": False}})
+
+    class _Ds:
+        id = "clinic"
+        support_spec = {"patient": "patient-model"}
+
+    try:
+        runner._agent_support(_Ds())
+        assert False, "expected ValueError for a support model missing from models[]"
+    except ValueError as e:
+        assert "patient-model" in str(e)
+    # no support block -> scripted setup, no error
+    class _DsPlain:
+        id = "demo"
+    assert runner._agent_support(_DsPlain()) is None
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_") and callable(_fn):

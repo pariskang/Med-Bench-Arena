@@ -98,8 +98,11 @@ python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
 
 ### Multimodal
 - **Lingshu (灵枢)** — `lingshu-medical-mllm/Lingshu-7B` / `-32B`, Qwen2.5-VL based, MIT.
-  12+ imaging modalities. **`trust_remote_code: true`**. Wired here as a text backend for MCQ;
-  use `configs/catalog_multimodal.yaml` for image tasks.
+  12+ imaging modalities. **`trust_remote_code: true`**. For image tasks
+  (`configs/catalog_multimodal.yaml`) the `hf` backend routes image batches through
+  **vLLM's `chat()` multimodal API**, so the model actually sees the pixels; it must run
+  on vLLM (≥ 0.6) — the transformers fallback cannot run images and the provider
+  **raises rather than silently dropping them**. Text MCQ works on either backend.
 
 ### Not publicly released on HuggingFace (documented for completeness)
 - **Qibo (岐黄)** — paper arXiv:2403.16056 (Tianjin Univ.), Chinese-LLaMA 7B/13B. **No HF/GitHub

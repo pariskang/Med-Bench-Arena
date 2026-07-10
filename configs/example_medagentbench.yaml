@@ -12,10 +12,14 @@
 # Then (with a real doctor model + your key):
 #   python -m medeval run configs/example_medagentbench.yaml --limit 10
 #
-# Grading: the built-in grader handles query tasks exactly and action tasks
-# approximately. For the OFFICIAL per-task rules, obtain the gated refsol.py
-# (project Box link) and set `refsol_path` below — it is called exactly as the
-# upstream harness does: getattr(refsol, task_id)(task, answer, fhir_base).
+# Grading: the built-in grader validates what it CAN check offline (task1 gold,
+# action-task POST payloads, the no-write rule for queries). Tasks it cannot
+# verify without the official gold (query values of tasks 2/4/6/7, conditional
+# no-ops of tasks 5/9/10) are flagged `ungradable` and EXCLUDED from pass^k
+# (reported as `ungradable` in the aggregate) — never counted as failures.
+# For the OFFICIAL per-task rules, obtain the gated refsol.py (project Box link)
+# and set `refsol_path` below — it is called exactly as the upstream harness
+# does: getattr(refsol, task_id)(task, answer, fhir_base).
 run:
   output_dir: ./results/medagentbench
   concurrency: 4

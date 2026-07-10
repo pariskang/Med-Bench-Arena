@@ -10,6 +10,9 @@
 #
 #   python -m medeval run       configs/catalog_ethics_safety.yaml --limit 5
 #   python -m medeval preflight configs/catalog_ethics_safety.yaml          # the MCQ entries
+# REPRODUCIBILITY NOTE: only some entries here are commit-pinned; the rest track
+# main (resolve/main URLs). Pin a `revision:` / <sha> URL before publishing
+# official numbers — see the Reliability section of the README.
 run:
   output_dir: ./results/ethics_safety
   concurrency: 12

@@ -9,7 +9,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from medeval.datasets.agent_env import MedAgentBenchEnv, fhir_request
+from medeval.datasets.agent_env import MedAgentBenchEnv, AgentClinicEnv, fhir_request
 from medeval.datasets.medagentbench_grader import parse_finish, builtin_grade
 
 
@@ -149,7 +149,91 @@ def test_real_get_post_finish_against_mock_fhir():
         srv.shutdown()
 
 
+def test_ungradable_tasks_excluded_from_pass_k():
+    from medeval import Sample, TaskType, create_metric
+    from medeval.schema import Generation, Prediction
+
+    # query task without shipped gold + no illegal write -> ungradable, NOT a fail
+    ok, d = builtin_grade({"id": "task2_1", "eval_MRN": "S1"}, ["98.6"], "x", [])
+    assert not ok and d.get("ungradable") is True
+    # ...but an illegal write on the same task IS a real, gradable failure
+    wrote = [{"status": 201, "body": {"resourceType": "Observation"}}]
+    ok_w, d_w = builtin_grade({"id": "task2_1", "eval_MRN": "S1"}, ["98.6"], "x", wrote)
+    assert not ok_w and not d_w.get("ungradable")
+    # conditional no-op (task5, ordered nothing) is ungradable too
+    t5 = {"id": "task5_1", "eval_MRN": "S9",
+          "instruction": "order IV magnesium", "context": "NDC 0338-1715-40"}
+    _, d5 = builtin_grade(t5, [], "x", [])
+    assert d5.get("undecidable_noop") and d5.get("ungradable")
+
+    # pass_k: a sample whose every rollout is ungradable is EXCLUDED from the mean
+    m = create_metric("pass_k")
+
+    def _pred(sid, rollouts):
+        return Prediction(sample_id=sid, generation=Generation(text=""), rollouts=rollouts)
+
+    s1 = Sample(id="s1", task_type=TaskType.AGENT, messages=[])
+    s2 = Sample(id="s2", task_type=TaskType.AGENT, messages=[])
+    sc_ok = asyncio.run(m.score(s1, _pred("s1", [{"success": True, "turns": 2, "info": {}}])))
+    sc_un = asyncio.run(m.score(s2, _pred(
+        "s2", [{"success": False, "turns": 2, "info": {"ungradable": True}}])))
+    assert sc_ok.value == 1.0
+    assert sc_un.value is None and sc_un.detail["skipped"] == "ungradable"
+    agg = m.aggregate([sc_ok, sc_un])
+    assert agg["pass^k"] == 1.0            # ungradable sample did not drag the mean
+    assert agg["n"] == 2 and agg["n_scored"] == 1 and agg["ungradable"] == 1
+    # mixed rollouts: the gradable ones decide, ungradable ones are ignored
+    sc_mix = asyncio.run(m.score(s1, _pred("s1", [
+        {"success": True, "turns": 1, "info": {}},
+        {"success": False, "turns": 1, "info": {"ungradable": True}}])))
+    assert sc_mix.value == 1.0 and sc_mix.detail["ungradable_rollouts"] == 1
+
+
+def test_query_match_does_not_float_coerce_identifiers():
+    from medeval.datasets.medagentbench_grader import _query_match
+    # an MRN with the same digits but a different prefix must NOT match
+    assert _query_match(["S6534835"], ["S6534835"]) is True
+    assert _query_match(["T6534835"], ["S6534835"]) is False
+    assert _query_match(["6534835"], ["S6534835"]) is False   # bare number != id
+    # genuine numeric answers still get tolerant compare
+    assert _query_match(["98.60"], ["98.6"]) is True
+
+
+def test_action_parsing_tolerates_reasoning_preamble():
+    from medeval.datasets.agent_env import MedAgentBenchEnv
+    ex = MedAgentBenchEnv._extract_action
+    assert ex("Let me look up the patient.\nGET Patient?name=X") == "GET Patient?name=X"
+    assert ex("<think>I should finish now</think>\nFINISH([\"S1\"])") == 'FINISH(["S1"])'
+    assert ex("I'll record it.\n```\nPOST Observation\n{\"a\":1}\n```").startswith("POST Observation")
+    assert ex("no command here") == ""
+
+
+def test_agentclinic_no_premature_commit_and_no_false_normal():
+    async def go():
+        scenario = {"OSCE_Examination": {
+            "Correct_Diagnosis": "Myasthenia gravis",
+            "Test_Results": {"Tensilon test": "positive"},
+            "Patient_Actor": {"Symptoms": {"Primary_Symptom": "double vision"}}}}
+        env = AgentClinicEnv(scenario, max_turns=10)
+        await env.reset()
+        # merely mentioning the phrase without a colon+dx must NOT end the episode
+        obs, r, done, _ = await env.step("I'm not DIAGNOSIS READY yet, need more info.")
+        assert not done and r == 0.0
+        # an unmatched test asks -> reported unavailable, NOT "normal"
+        obs2, _, _, _ = await env.step("REQUEST TEST: MRI brain")
+        assert "not" in obs2.lower() and "normal" not in obs2.lower()
+        # a real marker commits on the last occurrence
+        _, r3, done3, info = await env.step(
+            "Given fatigable weakness, DIAGNOSIS READY: Myasthenia gravis")
+        assert done3 and r3 == 1.0 and info["success"]
+    asyncio.run(go())
+
+
 if __name__ == "__main__":
     test_parse_finish_and_builtin_grade()
     test_real_get_post_finish_against_mock_fhir()
+    test_ungradable_tasks_excluded_from_pass_k()
+    test_query_match_does_not_float_coerce_identifiers()
+    test_action_parsing_tolerates_reasoning_preamble()
+    test_agentclinic_no_premature_commit_and_no_false_normal()
     print("OK: MedAgentBench FHIR loop + grader tests passed")

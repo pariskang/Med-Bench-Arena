@@ -5,6 +5,13 @@ batched inference (falls back to transformers). The important bit: this provider
 overrides :meth:`agenerate_many` to feed the *whole* batch to vLLM in one call —
 the single biggest performance difference vs. API backends. Imports are lazy so
 the package stays importable on machines without a GPU / vLLM / torch.
+
+Multimodal: batches whose messages carry ``images`` are routed through vLLM's
+``LLM.chat()`` API (which runs the model's multimodal processor on the
+``image_url`` content blocks), so vision models (Lingshu / MedGemma / Qilin-VL)
+actually see the pixels. If the loaded backend cannot run images (transformers
+fallback, or a vLLM too old to expose ``chat``), the provider raises instead of
+silently dropping the images and mis-scoring the model.
 """
 from __future__ import annotations
 
@@ -162,11 +169,31 @@ class HFProvider(ModelProvider):
         # Run the (blocking) engine in a worker thread so we stay async-friendly.
         return await asyncio.to_thread(self._generate_batch_sync, batch, gen)
 
+    @staticmethod
+    def _has_images(batch: list[list[Message]]) -> bool:
+        return any(m.images for msgs in batch for m in msgs)
+
+    def _collect_vllm(self, outputs, dt: float) -> list[Generation]:
+        results = []
+        for o in outputs:
+            comp = o.outputs[0]
+            ptok = len(o.prompt_token_ids)
+            ctok = len(comp.token_ids)
+            results.append(Generation(
+                text=comp.text, model=self.model,
+                prompt_tokens=ptok, completion_tokens=ctok,
+                total_tokens=ptok + ctok, latency_s=dt / max(1, len(outputs)),
+                finish_reason=getattr(comp, "finish_reason", "") or "stop",
+            ))
+        return results
+
     def _generate_batch_sync(
         self, batch: list[list[Message]], gen: dict[str, Any]
     ) -> list[Generation]:
         self._ensure_engine()
         gen = self._merge_gen(gen)   # per-model overrides on top of run defaults
+        if self._has_images(batch):
+            return self._generate_vision(batch, gen)
         prompts = [
             _chat_to_text(self._tokenizer, self._to_chat(msgs))
             for msgs in batch
@@ -176,20 +203,31 @@ class HFProvider(ModelProvider):
             params = self._sampling_params(gen)
             kw = {"lora_request": self._lora_request} if self._lora_request else {}
             outputs = self._engine.generate(prompts, params, **kw)
-            dt = now() - t0
-            results = []
-            for o in outputs:
-                comp = o.outputs[0]
-                ptok = len(o.prompt_token_ids)
-                ctok = len(comp.token_ids)
-                results.append(Generation(
-                    text=comp.text, model=self.model,
-                    prompt_tokens=ptok, completion_tokens=ctok,
-                    total_tokens=ptok + ctok, latency_s=dt / max(1, len(outputs)),
-                    finish_reason=getattr(comp, "finish_reason", "") or "stop",
-                ))
-            return results
+            return self._collect_vllm(outputs, now() - t0)
         return self._generate_transformers(prompts, gen, t0)
+
+    def _generate_vision(
+        self, batch: list[list[Message]], gen: dict[str, Any]
+    ) -> list[Generation]:
+        """Image-carrying batch: route through vLLM's ``chat()`` API, which runs
+        the model's multimodal processor on the OpenAI-style ``image_url`` content
+        blocks (http(s)/data URIs — local paths were already data-URI-encoded by
+        ``Message.to_openai``). The plain-text path would silently DROP the images
+        and score the model on text alone — refuse loudly instead."""
+        if self._mode != "vllm" or not hasattr(self._engine, "chat"):
+            raise RuntimeError(
+                f"{self.id}: the batch carries images but the loaded "
+                f"'{self._mode}' backend cannot run them — the images would be "
+                "silently dropped and the model mis-scored on text alone. Run a "
+                "vision model on vLLM (>= 0.6, exposes LLM.chat; e.g. Lingshu-7B, "
+                "MedGemma-27b-it), or serve it with `vllm serve` and point a "
+                "`litellm` backend at the endpoint.")
+        t0 = now()
+        params = self._sampling_params(gen)
+        convos = [self._to_chat(msgs) for msgs in batch]
+        kw = {"lora_request": self._lora_request} if self._lora_request else {}
+        outputs = self._engine.chat(convos, params, **kw)
+        return self._collect_vllm(outputs, now() - t0)
 
     def _generate_transformers(self, prompts, gen, t0):
         import torch

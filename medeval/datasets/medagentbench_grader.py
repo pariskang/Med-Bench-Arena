@@ -78,9 +78,18 @@ def _as_float(x: Any):
         return None
 
 
+def _looks_numeric(x: Any) -> bool:
+    """A bare number (optionally signed/decimal), NOT an identifier like 'S6534835'
+    that merely contains digits — those must match as strings, not as floats."""
+    return bool(re.fullmatch(r"\s*[-+]?\d+(?:\.\d+)?\s*", str(x)))
+
+
 def _query_match(answer: list, sol: list) -> bool:
-    # numeric answers (e.g. averages): tolerant compare on the first element
-    if len(sol) == 1 and len(answer) >= 1:
+    # numeric answers (e.g. averages): tolerant compare — ONLY when BOTH sides are
+    # genuinely numeric. Coercing an MRN like 'S6534835' to 6534835.0 would let a
+    # differently-prefixed id (or a bare number) match — a false pass.
+    if (len(sol) == 1 and len(answer) >= 1
+            and _looks_numeric(sol[0]) and _looks_numeric(answer[0])):
         fa, fs = _as_float(answer[0]), _as_float(sol[0])
         if fa is not None and fs is not None:
             return abs(fa - fs) <= max(0.01, abs(fs) * 0.01)
@@ -163,7 +172,8 @@ def _grade_action(tid: str, task: dict, mrn: str, text: str,
                   "successful_posts": len(ok_posts)}
         if not ok_posts:                     # ordered nothing -> undecidable no-op
             return False, {"mode": "action.task9(conditional no-op)",
-                           "undecidable_noop": True, "note": _NOOP_NOTE, **detail}
+                           "undecidable_noop": True, "ungradable": True,
+                           "note": _NOOP_NOTE, **detail}
         # both the repletion order AND the paired morning-lab must be present
         return (len(med) >= 1 and len(lab) >= 1), {
             "mode": "action.task9(MedicationRequest + ServiceRequest)", **detail}
@@ -184,7 +194,8 @@ def _conditional_verdict(tid: str, good: list, ok_posts: list,
                          extra: dict) -> tuple[bool, dict]:
     if not ok_posts:                         # agent ordered nothing
         return False, {"mode": f"action.{tid}(conditional no-op)",
-                       "undecidable_noop": True, "note": _NOOP_NOTE, **extra}
+                       "undecidable_noop": True, "ungradable": True,
+                       "note": _NOOP_NOTE, **extra}
     return len(good) >= 1, {"mode": f"action.{tid}(order placed)",
                             "matched_posts": len(good),
                             "successful_posts": len(ok_posts), **extra}
@@ -206,12 +217,17 @@ def builtin_grade(task: dict, answer: list, fhir_base: str,
             return (val_ok and not wrote), {
                 "mode": "query", "answer": answer, "sol": task["sol"],
                 "value_match": val_ok, "no_write": not wrote}
-        # no shipped gold (task2/4/6/7): value is unverifiable offline. We enforce
-        # the *checkable* official rule (a query must not POST) but do NOT fabricate
-        # a pass — correctness of the value requires refsol.
+        # no shipped gold (task2/4/6/7): the *value* is unverifiable offline. An
+        # illegal write IS checkable -> a real, gradable failure. Otherwise the
+        # task cannot be graded at all: flag it ``ungradable`` so pass_k EXCLUDES
+        # it from the aggregate — counting a possibly-correct answer as a failure
+        # would systematically understate every model (~4 of the 5 query families).
+        if wrote:
+            return False, {"mode": "query(illegal-write)", "answer": answer,
+                           "no_write": False, "note": _QVALUE_NOTE}
         return False, {"mode": "query(value-unverified)", "answer": answer,
-                       "no_write": not wrote, "value_unverified": True,
-                       "note": _QVALUE_NOTE}
+                       "no_write": True, "value_unverified": True,
+                       "ungradable": True, "note": _QVALUE_NOTE}
 
     # ---- action tasks: validate the POST payload per task ------------------
     if tid in ACTION_TASKS:

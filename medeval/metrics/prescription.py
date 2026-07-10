@@ -95,6 +95,11 @@ class PrescriptionMatch(Metric):
 
     async def score(self, sample: Sample, pred: Prediction) -> Score:
         ref_herbs, formula, principle = _ref_fields(sample)
+        if not ref_herbs and not formula and not principle:
+            # no gold herbs / formula / principle in the reference — nothing to
+            # score against; excluded from the aggregate rather than a hard 0.
+            return Score(metric="prescription_match", value=None,
+                         detail={"skipped": "no_gold"})
         pred_herbs = _pred_herbs(pred.text)
         common = len(ref_herbs & pred_herbs)
         p, r, f = prf(common, len(pred_herbs), len(ref_herbs))
@@ -112,9 +117,14 @@ class PrescriptionMatch(Metric):
                              "matched_herbs": sorted(ref_herbs & pred_herbs)})
 
     def aggregate(self, scores: list[Score]) -> dict[str, Any]:
-        n = len(scores) or 1
-        return {"herb_f1": sum(s.value for s in scores) / n,
-                "herb_precision": sum(s.detail["herb_precision"] for s in scores) / n,
-                "herb_recall": sum(s.detail["herb_recall"] for s in scores) / n,
-                "formula_match": sum(s.detail["formula_match"] for s in scores) / n,
-                "n": len(scores)}
+        scored = [s for s in scores if s.value is not None]
+
+        def _mean(vals: list[float]) -> float:
+            return sum(vals) / len(vals) if vals else 0.0
+
+        return {"herb_f1": _mean([s.value for s in scored]),
+                "herb_precision": _mean([s.detail["herb_precision"] for s in scored]),
+                "herb_recall": _mean([s.detail["herb_recall"] for s in scored]),
+                "formula_match": _mean([s.detail["formula_match"] for s in scored]),
+                "n": len(scores), "n_scored": len(scored),
+                "skipped_no_gold": len(scores) - len(scored)}

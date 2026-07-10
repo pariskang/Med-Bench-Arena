@@ -18,23 +18,35 @@ files, so it is fully decoupled from how the run was produced.
 from __future__ import annotations
 
 import json
+import re
 import string
 from pathlib import Path
 from typing import Any
 
 LETTERS = string.ascii_uppercase
 
+_SHARD_RE = re.compile(r"__shard\d+of\d+$")   # matches distributed.py's shard suffix
+
 
 # --- reading the runner's detail output ---------------------------------------
 def load_details(results_dir: str | Path) -> dict[tuple[str, str], list[dict]]:
-    """Return {(model, dataset): [detail rows]} from detail__*.jsonl files."""
+    """Return {(model, dataset): [detail rows]} from detail__*.jsonl files.
+
+    Distributed runs write one detail file per shard (``…__shard{i}of{N}.jsonl``).
+    Strip that suffix and merge the shards (dedup by sample_id) so a sharded run
+    exports as one submission per (model, dataset) — not one broken fragment per
+    shard, and not a dataset id polluted with a ``__shardIofN`` tail."""
     results_dir = Path(results_dir)
-    groups: dict[tuple[str, str], list[dict]] = {}
+    groups: dict[tuple[str, str], dict[str, dict]] = {}
     for fp in sorted(results_dir.glob("detail__*.jsonl")):
-        model, _, dataset = fp.stem[len("detail__"):].partition("__")
-        rows = [json.loads(l) for l in fp.read_text(encoding="utf-8").splitlines() if l.strip()]
-        groups[(model, dataset)] = rows
-    return groups
+        stem = _SHARD_RE.sub("", fp.stem[len("detail__"):])
+        model, _, dataset = stem.partition("__")
+        seen = groups.setdefault((model, dataset), {})
+        for i, l in enumerate(fp.read_text(encoding="utf-8").splitlines()):
+            if l.strip():
+                r = json.loads(l)
+                seen[str(r.get("sample_id", f"{fp.stem}:{i}"))] = r
+    return {k: list(v.values()) for k, v in groups.items()}
 
 
 def _orig_id(sample_id: str) -> str:

@@ -138,6 +138,29 @@ class LLMJudge(Metric):
         # HealthBench-faithful grading: one judge call per criterion, boolean
         # criteria_met, score = Σ(signed met points) / Σ(positive points).
         self.per_criterion = bool(self.config.get("per_criterion", False))
+        # extra attempts when the judge returns unparseable output (a transient
+        # API error, a truncated JSON, a refusal) before the sample is marked
+        # judge-failed and EXCLUDED from the aggregate — never scored as 0.
+        self.judge_retries = int(self.config.get("judge_retries", 1))
+
+    async def _ask_judge(self, prompt: str) -> tuple[dict[str, Any], float, bool]:
+        """Call the judge, extract its JSON verdict; retry on an empty parse.
+
+        Returns ``(data, cost, ok)``. ``ok=False`` means the judge failed to
+        produce any parseable verdict after retries — the caller must treat the
+        item as *ungraded* (excluded), not as a 0: a judge infrastructure failure
+        is not evidence the model answered badly.
+        """
+        from ..schema import Message
+        cost = 0.0
+        for _ in range(1 + max(0, self.judge_retries)):
+            gen = await self.judge.agenerate([Message("user", prompt)],
+                                             temperature=0.0, max_tokens=self.max_tokens)
+            cost += gen.cost_usd
+            data = _extract_json(gen.text)
+            if data:
+                return data, cost, True
+        return {}, cost, False
 
     def _rubric_for(self, sample: Sample) -> list[dict[str, Any]]:
         rub = sample.reference.get("rubric")
@@ -195,32 +218,44 @@ class LLMJudge(Metric):
 
     async def _score_healthbench(self, sample: Sample, pred: Prediction) -> Score:
         """Official HealthBench grading: per-criterion boolean, signed-met /
-        positive-points ratio (unclipped; the mean is clipped at aggregate)."""
-        from ..schema import Message
+        positive-points ratio (unclipped; the mean is clipped at aggregate).
+
+        A criterion whose judge call yields no parseable ``criteria_met`` (after
+        retry) is EXCLUDED from both achieved and possible — grading failure is
+        not evidence the criterion was unmet. If every criterion fails, the whole
+        sample is judge-failed (``value=None``, excluded from the aggregate)."""
         rubric = self._rubric_for(sample)
         convo = self._conversation(sample, pred.text)
         achieved = possible = 0.0
         met_map: dict[str, bool] = {}
+        failed_criteria: list[str] = []
         cost = 0.0
         for c in rubric:
             pts = float(c["points"])
-            possible += max(pts, 0.0)
             pstr = str(int(pts)) if pts == int(pts) else str(pts)
             item = f"[{pstr}] {c['criterion']}"
             prompt = (_HEALTHBENCH_GRADER.replace("<<conversation>>", convo)
                       .replace("<<rubric_item>>", item))
-            gen = await self.judge.agenerate([Message("user", prompt)],
-                                             temperature=0.0, max_tokens=self.max_tokens)
-            cost += gen.cost_usd
-            data = _extract_json(gen.text)
-            met = bool(data.get("criteria_met")) if isinstance(data, dict) else False
+            data, ccost, ok = await self._ask_judge(prompt)
+            cost += ccost
+            if not ok or "criteria_met" not in data:
+                failed_criteria.append(str(c["id"]))
+                continue
+            possible += max(pts, 0.0)
+            met = bool(data.get("criteria_met"))
             met_map[str(c["id"])] = met   # key by id, not criterion[:48] (prefix collisions)
             if met:
                 achieved += pts
+        if not met_map:  # judge produced no verdict for ANY criterion
+            return Score(metric="llm_judge", value=None, detail={
+                "style": "healthbench", "judge_failed": True,
+                "failed_criteria": failed_criteria,
+                "judge": getattr(self.judge, "id", "judge"), "judge_cost_usd": cost})
         value = achieved / possible if possible > 0 else 0.0   # unclipped (may be <0)
         return Score(metric="llm_judge", value=value, detail={
             "style": "healthbench", "achieved": achieved, "possible": possible,
-            "criteria_met": met_map, "judge": getattr(self.judge, "id", "judge"),
+            "criteria_met": met_map, "failed_criteria": failed_criteria,
+            "judge": getattr(self.judge, "id", "judge"),
             "judge_cost_usd": cost})
 
     async def score(self, sample: Sample, pred: Prediction) -> Score:
@@ -238,34 +273,61 @@ class LLMJudge(Metric):
         if (self.per_criterion or has_negative) and sample.reference.get("rubric"):
             return await self._score_healthbench(sample, pred)
         prompt = self._build_prompt(sample, pred.text, rubric)
-        from ..schema import Message
-        gen = await self.judge.agenerate(
-            [Message(role="user", content=prompt)],
-            temperature=0.0, max_tokens=self.max_tokens,
-        )
-        data = _extract_json(gen.text)
+        data, cost, ok = await self._ask_judge(prompt)
         raw_scores = data.get("scores", {}) if isinstance(data, dict) else {}
+        if not isinstance(raw_scores, dict):
+            raw_scores = {}
+        if not ok or (not raw_scores and data.get("overall") is None):
+            # The judge produced nothing usable after retries (empty/garbled JSON,
+            # a refusal, an API error). Excluded from the aggregate — NOT a 0:
+            # scoring it 0 would punish the model for the judge's failure.
+            return Score(metric="llm_judge", value=None, detail={
+                "judge_failed": True, "n_criteria": len(rubric),
+                "judge": getattr(self.judge, "id", "judge"), "judge_cost_usd": cost})
 
         # Tolerate a judge that keys by criterion text (or omits ids): try id →
-        # str(id) → exact criterion text. If NOTHING matched by key and the judge
-        # returned exactly one score per criterion, map positionally — otherwise a
-        # well-graded answer would silently collapse to 0.0 on every criterion.
+        # str(id) → exact criterion text → whitespace/case-normalized key. If
+        # NOTHING matched by key and the judge returned exactly one score per
+        # criterion, map positionally — otherwise a well-graded answer would
+        # silently collapse to 0.0 on every criterion.
+        def _normkey(k: Any) -> str:
+            return re.sub(r"\s+", " ", str(k)).strip().lower()
+
+        norm_scores: dict[str, Any] = {}
+        for k, v in raw_scores.items():
+            norm_scores.setdefault(_normkey(k), v)
+
         def _lookup(c: dict[str, Any]) -> Any:
-            if isinstance(raw_scores, dict):
-                for key in (c["id"], str(c["id"]), c.get("criterion", "")):
-                    if key in raw_scores:
-                        return raw_scores[key]
+            for key in (c["id"], str(c["id"]), c.get("criterion", "")):
+                if key in raw_scores:
+                    return raw_scores[key]
+            for key in (c["id"], c.get("criterion", "")):
+                nk = _normkey(key)
+                if nk and nk in norm_scores:
+                    return norm_scores[nk]
             return None
 
         raw_vals = [_lookup(c) for c in rubric]
-        if (all(v is None for v in raw_vals) and isinstance(raw_scores, dict)
-                and len(raw_scores) == len(rubric)):
+        if all(v is None for v in raw_vals) and len(raw_scores) == len(rubric):
             raw_vals = list(raw_scores.values())   # positional fallback
         keys_matched = sum(1 for v in raw_vals if v is not None)
+
+        # Criteria the judge's JSON never covered are EXCLUDED from the ratio
+        # (they were not graded), not coerced to 0 — a partial key mismatch must
+        # not understate the score. If nothing matched at all (and the counts
+        # ruled out the positional fallback), the sample is judge-failed.
+        unmatched = [c["id"] for c, rv in zip(rubric, raw_vals) if rv is None]
+        if keys_matched == 0 and data.get("overall") is None:
+            return Score(metric="llm_judge", value=None, detail={
+                "judge_failed": True, "keys_matched": 0, "n_criteria": len(rubric),
+                "unmatched_criteria": unmatched, "judge_keys": list(raw_scores)[:16],
+                "judge": getattr(self.judge, "id", "judge"), "judge_cost_usd": cost})
 
         achieved, possible = 0.0, 0.0
         per_crit: dict[str, float] = {}
         for c, rv in zip(rubric, raw_vals):
+            if rv is None:
+                continue   # ungraded criterion: excluded, never a silent 0
             pts = float(c["points"])
             s = _coerce_score(rv)
             per_crit[c["id"]] = s
@@ -289,15 +351,21 @@ class LLMJudge(Metric):
                 # < n_criteria flags a key-mismatch (e.g. the judge keyed by text).
                 "keys_matched": keys_matched,
                 "n_criteria": len(rubric),
+                "unmatched_criteria": unmatched,
                 "explanation": data.get("explanation", "") if isinstance(data, dict) else "",
                 "judge": getattr(self.judge, "id", "judge"),
-                "judge_cost_usd": gen.cost_usd,
+                "judge_cost_usd": cost,
             },
         )
 
     def aggregate(self, scores: list[Score]) -> dict[str, Any]:
-        n = len(scores)
-        mean = sum(s.value for s in scores) / n if n else 0.0
+        # judge-failed samples (value=None) are excluded from the mean — an
+        # infrastructure failure is not a model score. Their count is surfaced so
+        # a flaky judge is visible instead of silently dragging the score down.
+        vals = [s.value for s in scores if s.value is not None]
+        failures = len(scores) - len(vals)
+        mean = sum(vals) / len(vals) if vals else 0.0
         mean = max(0.0, min(1.0, mean))   # HealthBench clips the dataset mean to [0,1]
         cost = sum(s.detail.get("judge_cost_usd", 0.0) for s in scores)
-        return {"judge_score": mean, "n": n, "judge_cost_usd": round(cost, 6)}
+        return {"judge_score": mean, "n": len(scores), "n_scored": len(vals),
+                "judge_failures": failures, "judge_cost_usd": round(cost, 6)}

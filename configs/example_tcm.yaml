@@ -14,7 +14,10 @@ run:
   cache: true
 
 eval:
-  gen: {temperature: 0.0, max_tokens: 1024}
+  # 2048, not 1024: cmb_tcm below is multi-answer MCQ under the zero-shot-CoT
+  # default — exactly the case where a 1024-token trace runs past the cap, the
+  # "Answer: BC" line never appears, and the item scores 0 (see catalog_mcq.yaml).
+  gen: {temperature: 0.0, max_tokens: 2048}
   judge_model: mock-judge        # real: deepseek-r1 (below)
 
 models:

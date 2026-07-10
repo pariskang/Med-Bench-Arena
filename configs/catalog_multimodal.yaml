@@ -1,15 +1,25 @@
-# Catalog: medical multimodal (image) VQA. Needs a vision model (LiteLLM gpt-4o /
-# Poe / served vLLM). Three groups: (A) images embedded in parquet -> loadable as-is;
+# Catalog: medical multimodal (image) VQA. Needs a vision model: LiteLLM gpt-4o /
+# Poe / served vLLM, or a local `type: hf` VL model (Lingshu / MedGemma — image
+# batches route through vLLM's chat() multimodal API; see catalog_med_models.yaml).
+# Three groups: (A) images embedded in parquet -> loadable as-is;
 # (B) image = path into a separate images.zip -> download+unzip, set image_base;
 # (C) gated. Verified against live HF (2026-06).
 #
 #   python -m medeval run configs/catalog_multimodal.yaml --limit 5
+# REPRODUCIBILITY NOTE: only some entries here are commit-pinned; the rest track
+# main (resolve/main URLs). Pin a `revision:` / <sha> URL before publishing
+# official numbers — see the Reliability section of the README.
 run:
   output_dir: ./results/multimodal
   concurrency: 8
   cache: true
 eval:
-  gen: {temperature: 0.0, max_tokens: 512}
+  # 2048, not 512: the default MCQ instruction is zero-shot CoT ("think step by
+  # step, then Answer: X") — a trace that overruns max_tokens never emits its
+  # Answer: line and the item scores 0 (surfaced as truncated: true in detail).
+  # Many-option image MCQ (MedXpertQA-MM has A–J) needs the same headroom as the
+  # text catalogs.
+  gen: {temperature: 0.0, max_tokens: 2048}
   judge_model: mock-judge
 models:
   - {id: gpt-4o, type: litellm, model: openai/gpt-4o, api_key_env: OPENAI_API_KEY}   # vision

@@ -185,6 +185,11 @@ class MeridianAcupoint(_LexiconMetric):
     async def score(self, sample: Sample, pred: Prediction) -> Score:
         gold_mer = self._gold(sample, "meridians", self._mer_map)
         gold_acu = self._gold(sample, "acupoints", self._acu_map)
+        if not gold_mer and not gold_acu:
+            # no gold terms extractable from the reference — nothing to score
+            # against; excluded from the aggregate rather than a hard 0.
+            return Score(metric="meridian_acupoint", value=None,
+                         detail={"skipped": "no_gold"})
         pred_mer = extract_terms(pred.text, self._mer_map)
         pred_acu = extract_terms(pred.text, self._acu_map)
 
@@ -204,11 +209,20 @@ class MeridianAcupoint(_LexiconMetric):
             "gold_acupoints": sorted(gold_acu), "matched_acupoints": sorted(gold_acu & pred_acu)})
 
     def aggregate(self, scores: list[Score]) -> dict[str, Any]:
-        n = len(scores) or 1
-        return {"meridian_acupoint_f1": sum(s.value for s in scores) / n,
-                "meridian_f1": sum(s.detail["meridian_f1"] for s in scores) / n,
-                "acupoint_f1": sum(s.detail["acupoint_f1"] for s in scores) / n,
-                "n": len(scores)}
+        scored = [s for s in scores if s.value is not None]
+
+        def _mean(vals: list[float]) -> float:
+            return sum(vals) / len(vals) if vals else 0.0
+
+        # sub-F1 means only over samples that HAVE gold for that component —
+        # a sample with no gold meridians must not drag meridian_f1 to 0.
+        return {"meridian_acupoint_f1": _mean([s.value for s in scored]),
+                "meridian_f1": _mean([s.detail["meridian_f1"] for s in scored
+                                      if s.detail.get("gold_meridians")]),
+                "acupoint_f1": _mean([s.detail["acupoint_f1"] for s in scored
+                                      if s.detail.get("gold_acupoints")]),
+                "n": len(scores), "n_scored": len(scored),
+                "skipped_no_gold": len(scores) - len(scored)}
 
 
 @register_metric("tongue_pulse")
@@ -243,6 +257,11 @@ class TonguePulse(Metric):
 
     async def score(self, sample: Sample, pred: Prediction) -> Score:
         gt, gp = self._gold_tongue(sample), self._gold_pulse(sample)
+        if not gt and not gp:
+            # no tongue/pulse gold features in the reference — excluded from the
+            # aggregate rather than a hard 0.
+            return Score(metric="tongue_pulse", value=None,
+                         detail={"skipped": "no_gold"})
         pt = self._extract_tongue(pred.text)
         pp = self._extract_pulse(pred.text)
         tp, tr, tf = _prf(gt, pt)
@@ -256,11 +275,19 @@ class TonguePulse(Metric):
             "gold_pulse": sorted(gp), "matched_pulse": sorted(gp & pp)})
 
     def aggregate(self, scores: list[Score]) -> dict[str, Any]:
-        n = len(scores) or 1
-        return {"tongue_pulse_f1": sum(s.value for s in scores) / n,
-                "tongue_f1": sum(s.detail["tongue_f1"] for s in scores) / n,
-                "pulse_f1": sum(s.detail["pulse_f1"] for s in scores) / n,
-                "n": len(scores)}
+        scored = [s for s in scores if s.value is not None]
+
+        def _mean(vals: list[float]) -> float:
+            return sum(vals) / len(vals) if vals else 0.0
+
+        # sub-F1 means only over samples that HAVE gold for that category
+        return {"tongue_pulse_f1": _mean([s.value for s in scored]),
+                "tongue_f1": _mean([s.detail["tongue_f1"] for s in scored
+                                    if s.detail.get("gold_tongue")]),
+                "pulse_f1": _mean([s.detail["pulse_f1"] for s in scored
+                                   if s.detail.get("gold_pulse")]),
+                "n": len(scores), "n_scored": len(scored),
+                "skipped_no_gold": len(scores) - len(scored)}
 
 
 @register_metric("classics_ontology")
@@ -293,8 +320,13 @@ class ClassicsOntology(_LexiconMetric):
     async def score(self, sample: Sample, pred: Prediction) -> Score:
         gold = self._gold(sample)
         got = extract_terms(pred.text, self._map)
+        if not gold:
+            # the reference names no classical source — nothing to ground against;
+            # excluded from the aggregate rather than a hard 0.
+            return Score(metric="classics_ontology", value=None,
+                         detail={"skipped": "no_gold", "cited_sources": sorted(got)})
         p, r, f = _prf(gold, got)
-        source_correct = 1.0 if gold and gold <= got else 0.0
+        source_correct = 1.0 if gold <= got else 0.0
         return Score(metric="classics_ontology", value=f, detail={
             "source_precision": p, "source_recall": r, "source_f1": f,
             "all_sources_cited": source_correct,
@@ -302,8 +334,13 @@ class ClassicsOntology(_LexiconMetric):
             "matched": sorted(gold & got)})
 
     def aggregate(self, scores: list[Score]) -> dict[str, Any]:
-        n = len(scores) or 1
-        return {"source_f1": sum(s.value for s in scores) / n,
-                "source_recall": sum(s.detail["source_recall"] for s in scores) / n,
-                "all_sources_cited": sum(s.detail["all_sources_cited"] for s in scores) / n,
-                "n": len(scores)}
+        scored = [s for s in scores if s.value is not None]
+
+        def _mean(vals: list[float]) -> float:
+            return sum(vals) / len(vals) if vals else 0.0
+
+        return {"source_f1": _mean([s.value for s in scored]),
+                "source_recall": _mean([s.detail["source_recall"] for s in scored]),
+                "all_sources_cited": _mean([s.detail["all_sources_cited"] for s in scored]),
+                "n": len(scores), "n_scored": len(scored),
+                "skipped_no_gold": len(scores) - len(scored)}

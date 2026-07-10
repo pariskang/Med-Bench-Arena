@@ -87,7 +87,7 @@ pip install -e ".[all]"          # + datasets, litellm, openai, ray (no GPU need
 pip install vllm transformers torch peft
 ```
 
-> Requires **Python 3.10+**. The offline smoke test needs only `pyyaml`.
+> Requires **Python 3.10+**. The one-liner `example_smoke.yaml` run needs only `pyyaml`; the full offline test suite additionally needs the `datasets` extra (two suites load it) — `pip install -e ".[all]"`.
 
 ---
 
@@ -134,7 +134,7 @@ medeval.run_config(yaml.safe_load(open("configs/example_tcm.yaml")))
 
 MCQ evaluation is only trustworthy if the data is exactly what you think it is — and a full run is only practical if it survives an interruption. Five guards:
 
-- **Pinned revisions** — every headline MCQ benchmark is locked to an immutable commit, so the eval set can never silently change. HF repos use `revision: <sha>` (passed to `load_dataset`); raw-file sources embed the commit in the URL (`…/resolve/<sha>/…`, `raw.githubusercontent/…/<sha>/…`). Large pinned files download via an atomic, **HTTP-Range-resuming** fetcher — robust to proxies that truncate big responses, and a failed download never poisons the cache.
+- **Pinned revisions** — the headline MCQ catalog ([`catalog_mcq.yaml`](configs/catalog_mcq.yaml), except TCMBench-demo whose upstream publishes no stable ref — it is `demo`-tier anyway), the model-catalog MCQ slice, and TCM-Ladder are locked to immutable commits, so those eval sets can never silently change. HF repos use `revision: <sha>` (passed to `load_dataset`); raw-file sources embed the commit in the URL (`…/resolve/<sha>/…`, `raw.githubusercontent/…/<sha>/…`). The other catalogs (`catalog_en_med` / `catalog_multimodal` / `catalog_cn_tcm` / parts of `catalog_ethics_safety`) currently **track `main`** — their headers say so; pin a `revision:` before publishing numbers from them. Large pinned files download via an atomic, **HTTP-Range-resuming** fetcher — robust to proxies that truncate big responses, and a failed download never poisons the cache.
 - **`preflight`** — profile every dataset *without a model*: sample count, option-count distribution, **answer-parse success rate**, and the first few examples. Run it before you spend a single token:
 
 ```bash
@@ -208,7 +208,7 @@ A representative slice (all wired & verified against live sources; **30+** docum
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pariskang/Med-Bench-Arena/blob/main/notebooks/Med_Bench_Arena_Colab.ipynb)
 
-[`configs/catalog_med_models.yaml`](configs/catalog_med_models.yaml) wires **18 medical & TCM LLMs** as ready-to-run HF/vLLM backends — every repo id, base architecture, `dtype`, context length and `trust_remote_code` flag **verified against the live HuggingFace page** (full table + per-model notes in [`MODELS.md`](MODELS.md)). Pick one per run (vLLM holds a model in GPU memory) with `--models`:
+[`configs/catalog_med_models.yaml`](configs/catalog_med_models.yaml) wires **17 medical & TCM LLMs** as ready-to-run HF/vLLM backends — every repo id, base architecture, `dtype`, context length and `trust_remote_code` flag **verified against the live HuggingFace page** (full table + per-model notes in [`MODELS.md`](MODELS.md)). Pick one per run (vLLM holds a model in GPU memory) with `--models`:
 
 ```bash
 python -m medeval run configs/catalog_med_models.yaml --models zhongjing-2-1_8b --limit 20
@@ -239,7 +239,7 @@ Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baic
 
 - **`mcq_accuracy`** — **zero-shot CoT** prompting by default (reason step-by-step → `Answer: X`), with a structured-line-first, last-match-wins parser that ignores distractors mentioned in the reasoning and strips `<think>` traces. Robust letter/index/text extraction; single **and** multi-answer.
 - **`pass_k`** — *k* independent rollouts must *all* succeed (reports pass@1 too). Reasoning-model `<think>` traces are stripped before agent action parsing.
-- **`llm_judge`** — the judge is *just a provider*. Rubric resolves from the dataset (HealthBench points, CSEDB 分数, LLMEval checklist) or a per-task default (open_qa / **sdt 证型链** / **prescription 方剂** / **safety 安全**). Explicit 0/0.5/1 scoring anchors; malformed judge JSON is recovered through a **`json-repair`** pipeline; criterion keys are matched by id/text/position (never a silent 0). Signed points honored — a **negative-point** rubric is always routed through the per-criterion path so penalties keep the right sign; `per_criterion: true` runs the **faithful HealthBench algorithm** (one call per item, boolean `criteria_met`, signed-met / positive-points).
+- **`llm_judge`** — the judge is *just a provider*. Rubric resolves from the dataset (HealthBench points, CSEDB 分数, LLMEval checklist) or a per-task default (open_qa / **sdt 证型链** / **prescription 方剂** / **safety 安全**). Explicit 0/0.5/1 scoring anchors; malformed judge JSON is recovered through a **`json-repair`** pipeline; criterion keys are matched by id/text/normalized-text/position (never a silent 0). A judge that still returns nothing usable is **retried, then the sample is excluded** (`value=None`, surfaced as `judge_failures` in the aggregate) — a judge infrastructure failure is never scored as a model 0; ungraded criteria in a partial key match are likewise excluded from the ratio, not coerced to 0. Signed points honored — a **negative-point** rubric is always routed through the per-criterion path so penalties keep the right sign; `per_criterion: true` runs the **faithful HealthBench algorithm** (one call per item, boolean `criteria_met`, signed-met / positive-points).
 - **`f1` / `rouge` / `bleu`** — token overlap vs. a reference; **CJK-aware** tokenization (char-level Chinese, word-level Latin, `jieba` if installed).
 - **`numeric_match`** — calculation tasks (MedCalc-Bench): extracts the labeled `Answer: <number>` line (then a last-match marker, scientific notation supported) and checks it within tolerance / `[lower, upper]` range.
 - **`prescription_match`** — **方剂结构匹配**: herb-set P/R/F1 (君臣佐使) + formula-name + 治法 overlap, from the structured gold.
@@ -247,6 +247,8 @@ Quirks handled for you: **ZhongJing-2** is a LoRA on `Qwen1.5-1.8B-Chat`; **Baic
 - **`meridian_acupoint`** — **经络腧穴**: set-F1 over 12 正经 + 奇经 and acupoints, with alias normalization.
 - **`tongue_pulse`** — **舌象/脉象**: clause-anchored set-F1 over tongue (舌色/舌形/苔) and pulse (脉) features.
 - **`classics_ontology`** — **古籍本体**: did the answer ground itself in the right classical source(s)? Set-F1 + longest-match dedup; aliases from the knowledge graph.
+
+> Structured metrics (方剂/证型链/经络腧穴/舌脉/古籍) **exclude** samples whose reference yields no extractable gold (`value=None`; aggregates report `n_scored` / `skipped_no_gold`) instead of scoring them 0 — an unscorable reference is not the model's fault.
 
 </details>
 
@@ -310,7 +312,7 @@ python -m medeval run configs/example_medagentbench.yaml --limit 10
 
 ## 🖼 Multimodal (舌象 / 影像)
 
-`Message` carries optional `images` (http/data URIs or local paths → auto data-URI); `to_openai()` emits OpenAI/LiteLLM **content blocks**, so LiteLLM and Poe vision models work unchanged. The `hf_mcq` adapter takes an `image` field (URL / local path / HF `Image` dict / **raw parquet bytes** / PIL). For sets that ship images as a separate `images.zip`, set `image_zip:` + `image_base:` and the adapter **auto-downloads + unzips** once (idempotent); pre-fetch with `python -m medeval fetch <url>`.
+`Message` carries optional `images` (http/data URIs or local paths → auto data-URI); `to_openai()` emits OpenAI/LiteLLM **content blocks**, so LiteLLM and Poe vision models work unchanged. Local **HF vision models** (Lingshu / MedGemma) work too: image-carrying batches are routed through **vLLM's `chat()` multimodal API** — and if the loaded backend can't run images (transformers fallback, old vLLM) the provider **raises instead of silently dropping the images** and scoring the model on text alone. The `hf_mcq` adapter takes an `image` field (URL / local path / HF `Image` dict / **raw parquet bytes** / PIL). For sets that ship images as a separate `images.zip`, set `image_zip:` + `image_base:` and the adapter **auto-downloads + unzips** once (idempotent); pre-fetch with `python -m medeval fetch <url>`.
 
 ---
 
@@ -396,9 +398,9 @@ medeval/
 └── cli.py                     # python -m medeval run|preflight|list|export|merge|pool|slurm|kg|fetch
 configs/                       # declarative, live-verified run specs (incl. catalog_med_models.yaml)
 notebooks/                     # Colab runner for the medical / TCM model catalog
-tests/                         # 13 offline suites (no keys / GPU / network)
+tests/                         # 13 offline suites (no keys / GPU / network; needs the `datasets` extra)
 DATASETS.md                    # per-dataset access notes, caveats, field maps
-MODELS.md                      # the 18-model catalog: verified repo ids, archs, gating, quirks
+MODELS.md                      # the 17-model catalog: verified repo ids, archs, gating, quirks
 ```
 
 ---
@@ -423,6 +425,7 @@ If Med-Bench-Arena helps your research, please cite it:
 Contributions are welcome! Adding a benchmark is usually **config-only** (see `DATASETS.md` for the field-map vocabulary). For a new adapter/metric/backend, register it with the decorator above and add a test under `tests/`. Please run the offline suite before opening a PR:
 
 ```bash
+pip install -e ".[all]"                             # the suite needs the `datasets` extra
 for t in tests/test_*.py; do python "$t"; done      # all 13 should print OK
 ```
 

@@ -85,8 +85,62 @@ def test_multimodal_mcq_end_to_end_with_mock_vision():
     assert r["n"] == 2 and "accuracy" in r["metrics"]["mcq_accuracy"]
 
 
+def test_hf_backend_never_silently_drops_images():
+    """A batch carrying images must either go through vLLM's multimodal chat()
+    or raise — never fall through to the text path with the images dropped."""
+    from medeval.providers.hf import HFProvider
+
+    batch = [[Message("user", "描述舌象", images=["data:image/png;base64,AAA"])]]
+
+    # transformers mode cannot run images -> loud error, not a text-only run
+    p = HFProvider({"id": "vl", "type": "hf", "model": "dummy/VL"})
+    p._engine, p._tokenizer, p._mode = object(), object(), "transformers"
+    try:
+        p._generate_batch_sync(batch, {"max_tokens": 8})
+        assert False, "expected RuntimeError for images on transformers backend"
+    except RuntimeError as e:
+        assert "images" in str(e)
+
+    # vLLM without a chat() API (too old) -> same loud error
+    p._mode = "vllm"
+    try:
+        p._generate_batch_sync(batch, {"max_tokens": 8})
+        assert False, "expected RuntimeError for images without LLM.chat"
+    except RuntimeError as e:
+        assert "images" in str(e)
+
+    # vLLM with chat(): the conversation reaches chat() with content blocks intact
+    class _ChatEngine:
+        def __init__(self):
+            self.convos = None
+
+        def chat(self, convos, params, **kw):
+            self.convos = convos
+
+            class _Comp:
+                text, token_ids, finish_reason = "Answer: A", [1], "stop"
+
+            class _Out:
+                prompt_token_ids, outputs = [1, 2], [_Comp()]
+
+            return [_Out() for _ in convos]
+
+    eng = _ChatEngine()
+    p._engine = eng
+    # _sampling_params imports vllm; stub it out so the test stays offline
+    p._sampling_params = lambda gen: None
+    outs = p._generate_batch_sync(batch, {"max_tokens": 8})
+    assert outs[0].text == "Answer: A"
+    blocks = eng.convos[0][0]["content"]
+    assert isinstance(blocks, list) and blocks[1]["type"] == "image_url"
+
+    # text-only batches keep using the plain generate() path untouched
+    assert HFProvider._has_images([[Message("user", "hi")]]) is False
+
+
 if __name__ == "__main__":
     test_image_to_url_and_message_blocks()
     test_hf_mcq_image_encoding_variants()
     test_multimodal_mcq_end_to_end_with_mock_vision()
+    test_hf_backend_never_silently_drops_images()
     print("OK: multimodal tests passed")

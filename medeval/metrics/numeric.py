@@ -17,9 +17,10 @@ _NUM = re.compile(
 # the labeled final-answer line the MedCalc prompt_template asks for: "Answer: 12.5"
 _ANSWER_LINE = re.compile(
     r"(?im)^\s*(?:final answer|answer|最终答案|答案)\s*[:：=]\s*([-+\d.,eE]+)")
-# a looser final-answer marker, e.g. "answer is 12.5", "= 12.5", "结果为 12.5"
+# a looser final-answer marker, e.g. "answer is 12.5", "= 12.5", "结果为 12.5".
+# Latin keywords are \b-anchored so "resulting"/"finally" don't match "result"/"final".
 _ANSWER = re.compile(
-    r"(?:answer|result|final|总分|得分|答案|结果)\s*(?:is|are|:|：|=|为|是)?\s*([-+\d.,eE]+)",
+    r"(?:\b(?:answer|result|final)\b|总分|得分|答案|结果)\s*(?:is|are|:|：|=|为|是)?\s*([-+\d.,eE]+)",
     re.IGNORECASE)
 
 
@@ -77,8 +78,13 @@ class NumericMatch(Metric):
             if flo is not None and fhi is not None:
                 return (flo, fhi)
         raw = ref.get("reference") or ref.get("answer") or ref.get("ground_truth")
-        nums = _numbers(str(raw)) if raw is not None else []
-        return nums[0] if nums else None
+        if raw is None:
+            return None
+        # Extract the gold value with the SAME strategy as the prediction
+        # (labeled "Answer:" line -> last marker -> last number), so a gold given
+        # as a sentence ("Using formula X the value is 25.2") isn't mis-read as the
+        # first stray number in it. A bare "100" still resolves to 100.
+        return _pred_number(str(raw))
 
     async def score(self, sample: Sample, pred: Prediction) -> Score:
         gold = self._gold(sample)

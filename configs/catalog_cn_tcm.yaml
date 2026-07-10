@@ -2,6 +2,9 @@
 # Verified live (2026-06). Default offline mock model + mock judge.
 #
 #   python -m medeval run configs/catalog_cn_tcm.yaml --limit 5
+# REPRODUCIBILITY NOTE: unlike catalog_mcq.yaml, sources here are NOT commit-pinned
+# (HF repos / raw URLs track main). Pin a `revision:` / <sha> URL before publishing
+# official numbers — see the Reliability section of the README.
 run:
   output_dir: ./results/cn_tcm
   concurrency: 12
