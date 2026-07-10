@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🏥 Med-Bench-Arena
+# 🏥 MedEval Suite
 
-### A unified, config-driven arena for evaluating medical & Traditional-Chinese-Medicine LLMs and agents
+### A unified, config-driven benchmark suite for evaluating medical & Traditional-Chinese-Medicine LLMs and agents
 
 *One canonical schema decouples **datasets · backends · metrics** — so any model meets any benchmark under any metric, with zero glue code.*
 
@@ -21,7 +21,7 @@
 
 ---
 
-**Med-Bench-Arena** is a reference implementation of the *MedEval protocol*: plug **40+ medical / TCM / ethics-&-safety benchmarks** into **any** LLM or agent backend and score them with **12 metrics** — from plain MCQ accuracy to rubric-graded safety, structured 方剂/辨证 matching, and interactive agent `pass^k`. A single **canonical schema** sits between datasets, model backends, and metrics, so you get free `N datasets × M backends × K metrics` composition instead of `N×M×K` hard-coding.
+**MedEval Suite** is a reference implementation of the *MedEval protocol*: plug **40+ medical / TCM / ethics-&-safety benchmarks** into **any** LLM or agent backend and score them with **12 metrics** — from plain MCQ accuracy to rubric-graded safety, structured 方剂/辨证 matching, and interactive agent `pass^k`. A single **canonical schema** sits between datasets, model backends, and metrics, so you get free `N datasets × M backends × K metrics` composition instead of `N×M×K` hard-coding.
 
 > 🔬 **Every** dataset entry in `configs/` was researched and **verified against its live source** (HuggingFace datasets-server / raw repo files) — real repo ids, splits, column names, and answer encodings. Where a source can only be partly reproduced (gated graders, held-out answers), the limitation is documented, never papered over. See [`DATASETS.md`](DATASETS.md).
 
@@ -59,7 +59,7 @@ Three tensions drive the design (and the dataset choices):
 
 1. **Exam saturation vs. real clinical work** → static MCQ *and* rubric-graded open tasks *and* interactive agent environments.
 2. **Single-turn QA vs. sequential care** → an agent loop (AgentClinic / MedAgentBench / MediQ) scored with **pass^k**, not one-shot.
-3. **Accuracy vs. safety & ethics** (both systematically lag) → safety/ethics are their own task types with their own rubrics (CSEDB / MedSafetyBench / MTCMB-SE / **CARES-18K** red-teaming), plus a dedicated medical-ethics arena (**MedEthicsQA / PrinciplismQA / MedEthicEval / MedEthicsBench**).
+3. **Accuracy vs. safety & ethics** (both systematically lag) → safety/ethics are their own task types with their own rubrics (CSEDB / MedSafetyBench / MTCMB-SE / **CARES-18K** red-teaming), plus a dedicated medical-ethics suite (**MedEthicsQA / PrinciplismQA / MedEthicEval / MedEthicsBench**).
 
 ---
 
@@ -467,12 +467,12 @@ MODELS.md                      # the 17-model catalog: verified repo ids, archs,
 
 ## 📖 Citation
 
-If Med-Bench-Arena helps your research, please cite it:
+If MedEval Suite helps your research, please cite it:
 
 ```bibtex
-@software{med_bench_arena,
-  title  = {Med-Bench-Arena: A Unified Arena for Evaluating Medical and TCM LLMs and Agents},
-  author = {Med-Bench-Arena contributors},
+@software{medeval_suite,
+  title  = {MedEval Suite: A Unified Benchmark Suite for Evaluating Medical and TCM LLMs and Agents},
+  author = {MedEval Suite contributors},
   year   = {2026},
   url    = {https://github.com/pariskang/Med-Bench-Arena}
 }
@@ -493,7 +493,7 @@ for t in tests/test_*.py; do python "$t"; done      # all 13 should print OK
 
 ## 📄 License
 
-[MIT](LICENSE) © Med-Bench-Arena contributors.
+[MIT](LICENSE) © MedEval Suite contributors.
 
 ---
 

@@ -1,6 +1,6 @@
 # 🤖 Medical & TCM model catalog
 
-Ready-to-run HuggingFace backends wired into Med-Bench-Arena via
+Ready-to-run HuggingFace backends wired into MedEval Suite via
 [`configs/catalog_med_models.yaml`](configs/catalog_med_models.yaml). **Every repo id,
 base architecture, and parameter below was verified against the live HuggingFace model
 page (config.json / tokenizer_config) in 2026-06** — real ids, real `dtype`, real
@@ -115,7 +115,7 @@ python -m medeval run configs/catalog_med_models.yaml --models huatuogpt-o1-7b
 ## License & responsible-use note
 
 Most of these checkpoints restrict use to **research / non-commercial** and **explicitly disclaim
-clinical use**. Med-Bench-Arena evaluates capability on benchmarks — it is **not** a clinical
+clinical use**. MedEval Suite evaluates capability on benchmarks — it is **not** a clinical
 tool, and a leaderboard row is not a clinical-competence or deployment-readiness certification
 (see [README.md § Medical scientific validity](README.md#-medical-scientific-validity--what-this-does-and-does-not-measure)
 for what these benchmarks do and do not measure). Always read each model's license on its HF
