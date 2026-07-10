@@ -25,6 +25,7 @@ from .datasets.base import create_dataset
 from .datasets.agent_env import AgentAdapter
 from .metrics.base import create_metric
 from .eligibility import CONTENT_ADAPTERS, enforce_official_eligibility, has_pin_evidence
+from .stats import MIN_HEADLINE_SAMPLES, below_min_sample_size, bootstrap_ci, ci_overlap
 
 # Import implementation modules so their @register_* decorators run.
 from .providers import mock, litellm_provider, poe, hf  # noqa: F401
@@ -181,6 +182,19 @@ def headline(agg: dict[str, Any]) -> tuple[str, float]:
     return "score", 0.0
 
 
+def _headline_metric_name(agg: dict[str, Any], key: str) -> str | None:
+    """Which metric in ``agg`` produced ``headline(agg)``'s key — so the caller
+    can find that metric's raw per-sample scores to bootstrap a CI from."""
+    for name, d in agg.items():
+        if key in d:
+            return name
+    if "." in key:
+        name = key.split(".", 1)[0]
+        if name in agg:
+            return name
+    return None
+
+
 _INTERNAL_NOTE = (
     "> ⚠️ **Not comparable to official leaderboards.** These runs use a "
     "validation/dev split, a tiny demo subset, a small public sample, a gated "
@@ -305,15 +319,26 @@ def _leaderboard_section(subset: list[dict[str, Any]]) -> list[str]:
         st = rs[0].get("split_type", "unverified")
         tag = "" if st == "official" else f"  ·  `split_type: {st}`"
         out += [f"### {dsid}{tag}", "",
-                "| Model | Score | Metric | n | Cost (USD) | Notes |",
-                "|---|---|---|---|---|---|"]
-        for r in sorted(rs, key=lambda r: headline(r["metrics"])[1], reverse=True):
+                "| Model | Score | 95% CI | Metric | n | Cost (USD) | Notes |",
+                "|---|---|---|---|---|---|---|"]
+        ranked = sorted(rs, key=lambda r: headline(r["metrics"])[1], reverse=True)
+        for i, r in enumerate(ranked):
             key, val = headline(r["metrics"])
+            ci = r.get("ci95")
+            ci_str = f"[{ci[0]:.3f}, {ci[1]:.3f}]" if ci else "—"
+            notes: list[str] = []
             rate = _judge_failure_rate(r)
-            note = (f"⚠️ {rate:.1%} judge-ungraded — exceeds {JUDGE_FAILURE_HEADLINE_THRESHOLD:.0%}, "
-                    "manual review recommended" if rate > JUDGE_FAILURE_HEADLINE_THRESHOLD else "")
-            out.append(f"| {r['model']} | {val:.4f} | {key} | {r['n']} | "
-                       f"{r.get('model_cost_usd', 0.0):.4f} | {note} |")
+            if rate > JUDGE_FAILURE_HEADLINE_THRESHOLD:
+                notes.append(f"⚠️ {rate:.1%} judge-ungraded — exceeds "
+                             f"{JUDGE_FAILURE_HEADLINE_THRESHOLD:.0%}, manual review recommended")
+            if below_min_sample_size(r.get("n", 0)):
+                notes.append(f"⚠️ n={r.get('n')} < {MIN_HEADLINE_SAMPLES} — noisy, not a stable headline")
+            if ci and i + 1 < len(ranked):
+                nxt_ci = ranked[i + 1].get("ci95")
+                if nxt_ci and ci_overlap(tuple(ci), tuple(nxt_ci)):
+                    notes.append("≈ statistically tied with next-ranked model (CIs overlap)")
+            out.append(f"| {r['model']} | {val:.4f} | {ci_str} | {key} | {r['n']} | "
+                       f"{r.get('model_cost_usd', 0.0):.4f} | {'; '.join(notes)} |")
         out.append("")
     return out
 
@@ -662,6 +687,18 @@ class Runner:
         if role_cost:
             row["role_cost_usd"] = {"doctor": round(model_cost, 6),
                                     **{k: round(v, 6) for k, v in role_cost.items()}}
+        # Sample-level bootstrap 95% CI for the headline metric — a point
+        # estimate from a finite eval set invites over-reading tiny gaps
+        # between models; this lets the leaderboard flag when a ranking isn't
+        # well-supported (see ci_overlap / below_min_sample_size above).
+        hkey, _ = headline(agg)
+        hmetric = _headline_metric_name(agg, hkey)
+        if hmetric in scores_by_metric:
+            vals = [sc.value for sc in scores_by_metric[hmetric] if sc.value is not None]
+            if vals:
+                lo, hi = bootstrap_ci(vals)
+                if lo == lo and hi == hi:   # not NaN
+                    row["ci95"] = [round(lo, 6), round(hi, 6)]
         return row
 
     # --- output -----------------------------------------------------------

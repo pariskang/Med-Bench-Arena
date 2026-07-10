@@ -227,6 +227,18 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compare(args: argparse.Namespace) -> int:
+    from .compare import compare, render_compare
+    r = compare(args.results_dir, args.dataset, args.model_a, args.model_b,
+               metric=args.metric)
+    text = render_compare(r)
+    print(text)
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        print(f"[medeval] wrote {args.output}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="medeval", description="MedEval runner")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -294,6 +306,18 @@ def main(argv: list[str] | None = None) -> int:
     p_exp.add_argument("--medbench-test-dir", default=None,
                        help="MedBench data tree; fills answers into original *_test.jsonl")
     p_exp.set_defaults(func=cmd_export)
+
+    p_cmp = sub.add_parser("compare",
+                           help="paired statistical comparison of two models on one dataset "
+                                "(bootstrap CI + McNemar for binary metrics)")
+    p_cmp.add_argument("results_dir", help="a run's output dir (with detail__*.jsonl)")
+    p_cmp.add_argument("--dataset", required=True, help="dataset id to compare on")
+    p_cmp.add_argument("--model-a", required=True)
+    p_cmp.add_argument("--model-b", required=True)
+    p_cmp.add_argument("--metric", default=None,
+                       help="metric to compare (default: auto-pick the headline metric)")
+    p_cmp.add_argument("--output", default=None, help="also write the report to this path")
+    p_cmp.set_defaults(func=cmd_compare)
 
     p_mrg = sub.add_parser("merge", help="merge sharded results into one leaderboard")
     p_mrg.add_argument("results_dir", help="dir containing detail__*.jsonl shard files")
