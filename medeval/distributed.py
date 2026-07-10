@@ -72,10 +72,18 @@ def merge_results(results_dir: str | Path, output_dir: str | Path | None = None
         cost = sum(float(r.get("cost_usd", 0.0)) for r in detail)
         split_type = next((r.get("split_type") for r in detail if r.get("split_type")),
                           "unverified")
-        rows.append({"model": model, "dataset": dataset, "n": len(detail),
-                     "split_type": split_type,
-                     "metrics": agg, "model_cost_usd": round(cost, 6),
-                     "shards": len(files)})
+        role_cost: dict[str, float] = {}
+        for r in detail:
+            for role, d in (r.get("support_cost") or {}).items():
+                role_cost[role] = role_cost.get(role, 0.0) + float(d.get("cost_usd", 0.0))
+        row: dict[str, Any] = {"model": model, "dataset": dataset, "n": len(detail),
+                               "split_type": split_type,
+                               "metrics": agg, "model_cost_usd": round(cost, 6),
+                               "shards": len(files)}
+        if role_cost:
+            row["role_cost_usd"] = {"doctor": round(cost, 6),
+                                    **{k: round(v, 6) for k, v in role_cost.items()}}
+        rows.append(row)
 
     write_leaderboard(rows, output_dir)
     print(f"[medeval] merged {sum(r['shards'] for r in rows)} shard files -> "

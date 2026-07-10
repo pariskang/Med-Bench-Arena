@@ -176,6 +176,13 @@ class Prediction:
     trajectory: Optional[list[dict[str, Any]]] = None
     generations: Optional[list[Generation]] = None   # all k rollouts (pass^k)
     rollouts: Optional[list[dict[str, Any]]] = None   # per-rollout agent results
+    # Agent support-role (patient/measurement/moderator) cost/tokens, summed
+    # across every turn and rollout: {role: {cost_usd, prompt_tokens,
+    # completion_tokens}}. ``generation.cost_usd`` on this Prediction is the
+    # DOCTOR's cost only — without this, a faithful multi-agent AgentClinic run
+    # (3 extra LLMs per turn) would report the same "cost" as the fully
+    # scripted, single-LLM approximation.
+    support_cost: Optional[dict[str, dict[str, float]]] = None
 
     @property
     def text(self) -> str:

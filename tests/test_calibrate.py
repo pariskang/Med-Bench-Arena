@@ -239,6 +239,33 @@ def test_leaderboard_honors_matching_judge_signature_only():
         assert md.index("🧪 Auxiliary") < md.index("### tcmeval_sdt")
 
 
+def test_high_judge_failure_rate_forces_auxiliary_even_if_calibrated():
+    """P1: a calibrated judge model doesn't make a flaky RUN trustworthy —
+    >2% judge_failures on this run keeps it out of the headline sections."""
+    from medeval.runner import write_leaderboard
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "calibration_report.json").write_text(
+            json.dumps(_calibrated_report(judge_model="gpt-4.1")), encoding="utf-8")
+        sig = {"judge_model": "gpt-4.1", "judge_revision": None,
+              "prompt_style": "healthbench_per_criterion"}
+        rows = [
+            {"model": "clean", "dataset": "healthbench", "n": 100, "split_type": "official",
+             "metrics": {"llm_judge": {"judge_score": 0.7, "n": 100, "judge_failures": 1}},
+             "model_cost_usd": 0.0, "judge_signature": sig},
+            {"model": "flaky", "dataset": "healthbench", "n": 100, "split_type": "official",
+             "metrics": {"llm_judge": {"judge_score": 0.9, "n": 100, "judge_failures": 10}},
+             "model_cost_usd": 0.0, "judge_signature": sig},
+        ]
+        write_leaderboard(rows, d)
+        md = (d / "leaderboard.md").read_text()
+        # 1% failure rate: promoted alongside the calibrated, matching signature
+        assert "clean" in md.split("🧪 Auxiliary")[0]
+        # 10% failure rate: forced to Auxiliary despite the SAME calibrated signature
+        assert "flaky" in md.split("🧪 Auxiliary")[1]
+        assert "manual review" in md
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

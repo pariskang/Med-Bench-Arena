@@ -270,6 +270,8 @@ LLM 评审给出的分数，只有在它与**人类专家**意见一致时才值
 
 这个评审**达到了医生水平**——在两项指标上都落在人类天花板 0.05 以内，置信区间重叠。但天花板本身只是**中等**水平（κ≈0.44）：rubric 逐条评分本身就带有主观性。因此按策略，该评审**不具备上榜资格**（绝对 κ < 0.40），开放式分数保持**辅助**状态——这正是保守的默认行为。leaderboard 强制执行这一点：评审打分的数据集会落入独立的 *🧪 Auxiliary* 分区，直到某份校准报告将该评审标记为可上榜（`data/calibration/calibration_report.md`）。
 
+**评审模型本身通过了校准，不代表某一次运行就值得信任。** 如果某次运行里评审未能给超过 **2%** 的样本打分（无法修复的空/乱码 JSON、拒答、API 错误），无论校准状态如何，该行都会被强制打入 Auxiliary——leaderboard 该行会出现 `⚠️ N% judge-ungraded` 提示——因为高失败率的子集很可能恰好是最难/最模糊的样本，而非随机、无害的子集，发布前应人工抽查。
+
 **一份校准报告只绑定它实际测量过的东西——绝不是"这个评审总体没问题"的通行证。** 每份报告都携带一个 `signature`：具体的评审模型 + 版本（仅限 `--config --judge` 现场模式）、以及被测的评分 prompt/协议（目前只有 HealthBench 逐条风格）。leaderboard 只有在**这一行自己的**评审模型+版本、以及评分 prompt 与该签名**完全匹配**时，才会把它从 Auxiliary 分区提升出来——在 HealthBench 英文 criteria 上校准了 `gpt-4.1`，绝不会让 `deepseek-r1` 获得上榜资格，也不会让走默认（非逐条）rubric prompt 的中文中医辨证/伦理/安全数据集获得上榜资格，哪怕磁盘上确实存在一份 `calibrated: true` 的报告。`--labels` 模式（强模型/人工的盲评一次性通过，而非现场评审运行）根本没有具体的评审模型可绑定，因此**永远不会自动生效**——它只是"医生水平的一致性是可以达到的"这一证据，而不是可现场验证的保证；只有 `--config --judge <id>` 才会产出可绑定、被 leaderboard 认可的报告。
 
 ```bash
@@ -297,6 +299,8 @@ python -m medeval calibrate --config configs/example_open_safety.yaml --judge gp
 docker run -p 8080:8080 jyxsu6/medagentbench:latest          # 提供 :8080/fhir
 python -m medeval run configs/example_medagentbench.yaml --limit 10
 ```
+
+**按角色统计成本。** 忠实的多智能体 AgentClinic 每回合最多要调用 3 个额外的 LLM（病人 / 检查 / 仲裁）——`model_cost_usd` 只是医生一方的成本，若不额外统计，忠实运行的 leaderboard 行看起来会和纯规则驱动的简化版一样便宜。任何配置了 `support:` 的智能体行都会额外携带 `role_cost_usd: {doctor, patient, measurement, moderator}`，让单智能体与多智能体方案不仅分数可比，成本也可比。
 
 ---
 

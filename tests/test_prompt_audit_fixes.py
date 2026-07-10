@@ -322,6 +322,92 @@ def test_agentclinic_measurement_agent_is_actually_invoked():
     assert measurer.calls == 2
 
 
+def test_agent_support_cost_tracked_by_role():
+    """P1: patient/measurement/moderator LLM calls must contribute to a
+    per-role cost breakdown — previously only the doctor's cost was tracked,
+    so a faithful multi-agent run looked exactly as cheap as the scripted one."""
+    from medeval.datasets.agent_env import AgentClinicAdapter
+
+    osce = {"OSCE_Examination": {
+        "Objective_for_Doctor": "Diagnose.",
+        "Patient_Actor": {"History": "fatigable weakness"},
+        "Test_Results": {"Blood_Tests": {"AChR_Antibodies": "elevated"}},
+        "Correct_Diagnosis": "Myasthenia gravis"}}
+
+    def _prov(pid, reply, cost):
+        class _P:
+            id = pid
+            async def agenerate(self, messages, **gen):
+                return Generation(text=reply, cost_usd=cost)
+        return _P()
+
+    class _Doctor:
+        id = "doctor"
+        def __init__(self):
+            self.turn = 0
+        async def agenerate(self, messages, **gen):
+            self.turn += 1
+            if self.turn == 1:
+                return Generation(text="How are you feeling?", cost_usd=0.01)
+            return Generation(text="REQUEST TEST: Blood", cost_usd=0.01) if self.turn == 2 \
+                else Generation(text="DIAGNOSIS READY: Myasthenia gravis", cost_usd=0.01)
+
+    support = {
+        "patient": _prov("patient-model", "I feel weak.", 0.02),
+        "measurement": _prov("measurement-model", "elevated", 0.03),
+        "moderator": _prov("moderator-model", "yes", 0.04),
+    }
+    ad = AgentClinicAdapter({"id": "clinic", "variant": "medqa", "k": 1})
+    sample = Sample(id="clinic:0", task_type=TaskType.AGENT, messages=[], env_spec=osce)
+    pred = asyncio.run(ad.rollout(sample, _Doctor(), support=support))
+
+    assert pred.support_cost is not None
+    assert abs(pred.support_cost["patient"]["cost_usd"] - 0.02) < 1e-9
+    assert abs(pred.support_cost["measurement"]["cost_usd"] - 0.03) < 1e-9
+    assert abs(pred.support_cost["moderator"]["cost_usd"] - 0.04) < 1e-9
+
+    # end-to-end through the Runner (real support-role resolution via _agent_support)
+    from medeval.providers.base import ModelProvider, register_provider
+
+    @register_provider("_stub_cost_test")
+    class _StubProvider(ModelProvider):
+        def __init__(self, config):
+            super().__init__(config)
+            self._reply = config["reply"]
+            self._cost = config["cost"]
+            self._doctor = config.get("doctor", False)
+            self._turn = 0
+        async def agenerate(self, messages, **gen):
+            if not self._doctor:
+                return Generation(text=self._reply, cost_usd=self._cost)
+            self._turn += 1
+            texts = ["How are you feeling?", "REQUEST TEST: Blood",
+                    "DIAGNOSIS READY: Myasthenia gravis"]
+            return Generation(text=texts[min(self._turn, 3) - 1], cost_usd=self._cost)
+
+    r = Runner({
+        "models": [
+            {"id": "doctor", "type": "_stub_cost_test", "reply": "", "cost": 0.01, "doctor": True},
+            {"id": "patient", "type": "_stub_cost_test", "reply": "I feel weak.", "cost": 0.02},
+            {"id": "measurement", "type": "_stub_cost_test", "reply": "elevated", "cost": 0.03},
+            {"id": "moderator", "type": "_stub_cost_test", "reply": "yes", "cost": 0.04},
+        ],
+        "datasets": [{"id": "clinic", "adapter": "agentclinic", "variant": "medqa",
+                     "source_url": "https://x/y.jsonl", "k": 1, "metrics": ["pass_k"],
+                     "support": {"patient": "patient", "measurement": "measurement",
+                                "moderator": "moderator"}}],
+        "run": {"cache": False},
+    })
+    r.datasets[0].load = lambda: [sample]   # bypass the real download
+    row = asyncio.run(r._eval(r.providers["doctor"], r.datasets[0], [sample]))
+    assert "role_cost_usd" in row
+    rc = row["role_cost_usd"]
+    assert abs(rc["patient"] - 0.02) < 1e-9
+    assert abs(rc["measurement"] - 0.03) < 1e-9
+    assert abs(rc["moderator"] - 0.04) < 1e-9
+    assert rc["doctor"] > 0   # the doctor's own accumulated cost, unchanged behavior
+
+
 def test_agentclinic_official_requires_all_three_support_roles():
     """P0-3: split_type must require patient+measurement+moderator ALL present —
     a single support role (or none) must not silently claim 'official'."""

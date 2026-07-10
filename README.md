@@ -284,6 +284,13 @@ and open-ended scores are kept **auxiliary** — exactly the conservative defaul
 enforces this: judge-scored datasets land in a separate *🧪 Auxiliary* tier until a calibration
 report marks the judge headline-eligible (`data/calibration/calibration_report.md`).
 
+**A calibrated judge model doesn't make a flaky RUN trustworthy.** If a run's judge fails to
+grade more than **2%** of samples (empty/garbled JSON the repair pipeline couldn't recover,
+refusals, API errors), that row is forced into Auxiliary regardless of calibration — a
+`⚠️ N% judge-ungraded` note appears in its leaderboard row — since a high-failure subset is
+plausibly the hardest/most-ambiguous samples, not a random, harmless one, and warrants manual
+spot-checking before publishing.
+
 **A calibration is bound to exactly what it measured — never a blanket "the judge is fine" pass.**
 Every report carries a `signature`: the concrete judge model + revision (live `--config --judge`
 mode only), and the grading prompt/protocol tested (today: the HealthBench per-criterion style).
@@ -324,6 +331,13 @@ The doctor agent runs the same `ModelProvider` policy inside an `AgentEnvironmen
 docker run -p 8080:8080 jyxsu6/medagentbench:latest          # serves :8080/fhir
 python -m medeval run configs/example_medagentbench.yaml --limit 10
 ```
+
+**Cost by role.** A faithful multi-agent AgentClinic run calls up to 3 extra LLMs per turn
+(patient / measurement / moderator) — `model_cost_usd` is the doctor's cost only, so a leaderboard
+row for a faithful run would otherwise look exactly as cheap as the fully-scripted approximation.
+Every agent row with `support:` configured additionally carries `role_cost_usd: {doctor, patient,
+measurement, moderator}` so single-agent and multi-agent setups are cost-comparable, not just
+score-comparable.
 
 ---
 

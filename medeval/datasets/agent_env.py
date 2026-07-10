@@ -84,6 +84,24 @@ class AgentEnvironment(abc.ABC):
         """Action-space help appended to the doctor system prompt."""
         return ""
 
+    def _track_support(self, role: str, gen: Generation) -> None:
+        """Accumulate one support-role (patient/measurement/moderator) LLM
+        call's cost/tokens. AgentAdapter.rollout() reads this back after every
+        episode so the leaderboard can report cost broken down BY ROLE — without
+        it, a faithful multi-agent run (3 extra LLMs per turn) silently reports
+        the same "cost" as the fully scripted single-LLM approximation."""
+        d = getattr(self, "_support_cost", None)
+        if d is None:
+            d = self._support_cost = {}
+        r = d.setdefault(role, {"cost_usd": 0.0, "prompt_tokens": 0.0, "completion_tokens": 0.0})
+        r["cost_usd"] += gen.cost_usd or 0.0
+        r["prompt_tokens"] += gen.prompt_tokens or 0
+        r["completion_tokens"] += gen.completion_tokens or 0
+
+    @property
+    def support_cost(self) -> dict[str, dict[str, float]]:
+        return getattr(self, "_support_cost", None) or {}
+
 
 # ===========================================================================
 # Base adapter: rollout loop + pass^k plumbing
@@ -133,6 +151,10 @@ class AgentAdapter(DatasetAdapter):
         # not just the first rollout's last turn — else the leaderboard Cost column
         # for agent datasets reflects one generation per episode (a large undercount).
         tot_cost = tot_pt = tot_ct = 0.0
+        # ...and the SUPPORT roles' (patient/measurement/moderator) cost too — a
+        # faithful multi-agent AgentClinic run calls 3 extra LLMs per turn; without
+        # this it silently reports the same "cost" as the scripted approximation.
+        support_totals: dict[str, dict[str, float]] = {}
 
         for ki in range(k):
             env = self.make_env(sample, support)
@@ -165,6 +187,12 @@ class AgentAdapter(DatasetAdapter):
             if ki == 0:
                 first_gen = last_gen or Generation.empty(getattr(provider, "id", ""))
                 first_traj = traj
+            for role, d in env.support_cost.items():
+                acc = support_totals.setdefault(
+                    role, {"cost_usd": 0.0, "prompt_tokens": 0.0, "completion_tokens": 0.0})
+                acc["cost_usd"] += d["cost_usd"]
+                acc["prompt_tokens"] += d["prompt_tokens"]
+                acc["completion_tokens"] += d["completion_tokens"]
 
         gen_out = first_gen or Generation.empty()
         # report the episode-total accounting (all turns × all rollouts) so the
@@ -173,10 +201,15 @@ class AgentAdapter(DatasetAdapter):
         gen_out.prompt_tokens = int(tot_pt)
         gen_out.completion_tokens = int(tot_ct)
         gen_out.total_tokens = int(tot_pt + tot_ct)
+        for d in support_totals.values():
+            d["cost_usd"] = round(d["cost_usd"], 8)
+            d["prompt_tokens"] = int(d["prompt_tokens"])
+            d["completion_tokens"] = int(d["completion_tokens"])
         return Prediction(
             sample_id=sample.id,
             generation=gen_out,
             trajectory=first_traj, rollouts=rollouts,
+            support_cost=support_totals or None,
         )
 
     def parse(self, sample: Sample, text: str) -> Prediction:  # not used for agents
@@ -328,6 +361,7 @@ class AgentClinicEnv(AgentEnvironment):
                     [Message("system", "You are the patient. Answer in 1-3 sentences without "
                              "naming your diagnosis. Your background: " + info),
                      Message("user", action)], temperature=0.7, max_tokens=128)
+                self._track_support("patient", g)
                 return g.text
             # scripted fallback: redact the gold diagnosis so the raw record dump
             # can't leak the answer (which would inflate the offline pass^k).
@@ -338,6 +372,7 @@ class AgentClinicEnv(AgentEnvironment):
                    "never state your diagnosis. Your profile: " + json.dumps(actor, ensure_ascii=False))
             g = await prov.agenerate([Message("system", sys), Message("user", action)],
                                      temperature=0.7, max_tokens=128)
+            self._track_support("patient", g)
             return g.text
         # scripted: surface symptoms / history deterministically
         sym = actor.get("Symptoms", {})
@@ -367,6 +402,7 @@ class AgentClinicEnv(AgentEnvironment):
                              "requested test was not performed, say so explicitly — never invent "
                              "a normal result. Findings: " + pe),
                      Message("user", action)], temperature=0.0, max_tokens=128)
+                self._track_support("measurement", g)
                 return f"RESULTS: {g.text}"
             return f"RESULTS: {pe}" if pe else "RESULTS: NORMAL READINGS"
         if prov is not None:
@@ -379,6 +415,7 @@ class AgentClinicEnv(AgentEnvironment):
                    json.dumps(self.osce.get("Physical_Examination_Findings", {}), ensure_ascii=False))
             g = await prov.agenerate([Message("system", sys), Message("user", action)],
                                      temperature=0.0, max_tokens=128)
+            self._track_support("measurement", g)
             return f"RESULTS: {g.text}"
         results = self.osce.get("Test_Results", {})
         req = action.split(":", 1)[-1].strip().lower() if ":" in action else ""
@@ -409,6 +446,7 @@ class AgentClinicEnv(AgentEnvironment):
             q = (f"Correct diagnosis: {correct}\nDoctor's diagnosis: {dx}\n"
                  "Do they refer to the same condition? Answer yes or no.")
             g = await prov.agenerate([Message("user", q)], temperature=0.0, max_tokens=8)
+            self._track_support("moderator", g)
             tl = g.text.lower()
             # word-boundary match, not `"yes" in tl` (which fires on "eyes"); and
             # veto on an explicit negative so "No, different condition" scores False.
@@ -827,6 +865,7 @@ class MediQEnv(AgentEnvironment):
                    ". If none apply, say you don't have that information.")
             g = await prov.agenerate([Message("system", sys), Message("user", question)],
                                      temperature=0.0, max_tokens=80)
+            self._track_support("patient", g)
             return g.text
         return self._reveal(question)
 

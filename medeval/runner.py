@@ -279,6 +279,22 @@ def _is_judge_headline(row: dict[str, Any]) -> bool:
     return headline(row["metrics"])[0] == "judge_score"
 
 
+# A run whose judge failed to grade more than this fraction of samples (empty/
+# garbled JSON, refusals, API errors — see llm_judge.py's judge_failures) is
+# not a trustworthy headline number even if the judge MODEL itself is
+# calibrated in general: something went wrong on THIS run specifically, and
+# high-failure samples are plausibly the hardest/most-ambiguous ones (a
+# non-random subset), not a harmless random sample of missingness.
+JUDGE_FAILURE_HEADLINE_THRESHOLD = 0.02
+
+
+def _judge_failure_rate(row: dict[str, Any]) -> float:
+    m = (row.get("metrics") or {}).get("llm_judge")
+    if not m or not m.get("n"):
+        return 0.0
+    return m.get("judge_failures", 0) / m["n"]
+
+
 def _leaderboard_section(subset: list[dict[str, Any]]) -> list[str]:
     """Per-dataset ranked tables for one comparability tier."""
     by_ds: dict[str, list] = {}
@@ -289,12 +305,15 @@ def _leaderboard_section(subset: list[dict[str, Any]]) -> list[str]:
         st = rs[0].get("split_type", "unverified")
         tag = "" if st == "official" else f"  ·  `split_type: {st}`"
         out += [f"### {dsid}{tag}", "",
-                "| Model | Score | Metric | n | Cost (USD) |",
-                "|---|---|---|---|---|"]
+                "| Model | Score | Metric | n | Cost (USD) | Notes |",
+                "|---|---|---|---|---|---|"]
         for r in sorted(rs, key=lambda r: headline(r["metrics"])[1], reverse=True):
             key, val = headline(r["metrics"])
+            rate = _judge_failure_rate(r)
+            note = (f"⚠️ {rate:.1%} judge-ungraded — exceeds {JUDGE_FAILURE_HEADLINE_THRESHOLD:.0%}, "
+                    "manual review recommended" if rate > JUDGE_FAILURE_HEADLINE_THRESHOLD else "")
             out.append(f"| {r['model']} | {val:.4f} | {key} | {r['n']} | "
-                       f"{r.get('model_cost_usd', 0.0):.4f} |")
+                       f"{r.get('model_cost_usd', 0.0):.4f} | {note} |")
         out.append("")
     return out
 
@@ -307,9 +326,15 @@ def write_leaderboard(rows: list[dict[str, Any]], output_dir: Path) -> None:
         json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # Open-ended (LLM-judge) scores are auxiliary until THIS row's specific judge
-    # model + grading prompt clears calibration (not just "some judge, once").
+    # model + grading prompt clears calibration (not just "some judge, once") —
+    # AND stay auxiliary regardless of calibration if THIS run's judge failed to
+    # grade too many samples (a calibrated judge model doesn't make a flaky RUN
+    # trustworthy; high-failure samples are plausibly the hardest ones, not a
+    # random, harmless subset).
     report = _load_calibration_report(output_dir)
-    auxiliary = [r for r in rows if _is_judge_headline(r) and not _row_judge_calibrated(r, report)]
+    auxiliary = [r for r in rows if _is_judge_headline(r) and (
+        not _row_judge_calibrated(r, report)
+        or _judge_failure_rate(r) > JUDGE_FAILURE_HEADLINE_THRESHOLD)]
     ranked = [r for r in rows if r not in auxiliary]
     official = [r for r in ranked if r.get("split_type", "unverified") == "official"]
     internal = [r for r in ranked if r.get("split_type", "unverified") != "official"]
@@ -626,6 +651,17 @@ class Runner:
                                "metrics": agg, "model_cost_usd": round(model_cost, 6)}
         if judge_sig is not None:
             row["judge_signature"] = judge_sig
+        # Agent support-role (patient/measurement/moderator) cost, summed across
+        # every sample — without this a faithful multi-agent AgentClinic run
+        # (3 extra LLMs/turn) is invisible next to model_cost_usd (the doctor
+        # only), making single-agent and multi-agent setups look equally cheap.
+        role_cost: dict[str, float] = {}
+        for s in samples:
+            for role, d in (preds[s.id].support_cost or {}).items():
+                role_cost[role] = role_cost.get(role, 0.0) + d.get("cost_usd", 0.0)
+        if role_cost:
+            row["role_cost_usd"] = {"doctor": round(model_cost, 6),
+                                    **{k: round(v, 6) for k, v in role_cost.items()}}
         return row
 
     # --- output -----------------------------------------------------------
@@ -656,6 +692,8 @@ class Runner:
                 }
                 if p.rollouts is not None:
                     row["rollouts"] = p.rollouts
+                if p.support_cost is not None:
+                    row["support_cost"] = p.support_cost
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     def _write_leaderboard(self, rows: list[dict[str, Any]]) -> None:
