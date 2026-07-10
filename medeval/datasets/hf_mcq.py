@@ -40,7 +40,14 @@ class HFMCQAdapter(DatasetAdapter):
       inject_options: list[str]   # when there is no options column (e.g. yes/no/maybe)
       system_prompt: optional system message
       prompt_template: optional; placeholders {question} {options}
-      instruction:   trailing instruction (default: answer with a letter)
+      prompt_style:  cot (default) | direct | native — picks the DEFAULT
+                     instruction (see `instruction` below to override outright).
+                     cot asks for step-by-step reasoning then a structured
+                     "Answer: A" line; direct asks for the letter only, no
+                     reasoning; native appends no instruction at all, so a
+                     model's own default response shape is never forced into
+                     a mold it wasn't tuned for.
+      instruction:   trailing instruction (default: derived from prompt_style)
       trust_remote_code: bool
       limit:         cap number of samples
     """
@@ -74,11 +81,34 @@ class HFMCQAdapter(DatasetAdapter):
         self.shuffle_options = bool(config.get("shuffle_options", False))
         self.system_prompt = config.get("system_prompt")
         self.prompt_template = config.get("prompt_template")
-        # Zero-shot CoT: ask the model to reason first, then commit to a structured
-        # final-answer line. The parsers give this "Answer: X" line top priority (an
-        # anchored lane, last-match-wins for self-correcting CoT), and fall back to a
-        # looser keyword scan only when the structured line is absent.
-        if config.get("answer_format") == "multi":
+        # Universal zero-shot CoT is not a neutral choice: a model with its own
+        # built-in reasoning format (native <think>/thinking-token models) or one
+        # tuned to answer tersely can be penalized by being forced through an
+        # instruction shape it wasn't trained for. prompt_style picks the
+        # DEFAULT instruction (an explicit `instruction:` always overrides it):
+        #   cot    (default, unchanged) — "think step by step, then Answer: A"
+        #   direct — answer only, no reasoning requested
+        #   native — no instruction appended at all; let the model's own default
+        #            behavior decide the response shape (answer parsing already
+        #            falls back to a loose keyword scan when no "Answer:" line
+        #            is present, so this does not silently score everything 0)
+        multi = config.get("answer_format") == "multi"
+        self.prompt_style = config.get("prompt_style", "cot")
+        if self.prompt_style not in ("cot", "direct", "native"):
+            import warnings
+            warnings.warn(f"{config.get('id', self.adapter_name)}: unknown prompt_style "
+                          f"{self.prompt_style!r}; expected cot|direct|native, using cot")
+            self.prompt_style = "cot"
+        if self.prompt_style == "native":
+            _default_instruction = ""
+        elif self.prompt_style == "direct":
+            _default_instruction = (
+                ("Answer with ALL correct letters together, no explanation, e.g.:\nAnswer: BC"
+                 if multi else
+                 "Answer with ONLY the letter of the correct option, no explanation, e.g.:\nAnswer: A")
+                + "\n（无需解释，直接给出答案字母，格式为 Answer: A）"
+            )
+        elif multi:
             _default_instruction = (
                 "Think step by step, then write ALL correct letters together on a new line as:\n"
                 "Answer: BC\n"
@@ -422,7 +452,8 @@ class HFMCQAdapter(DatasetAdapter):
                 question=question, options=opt_block, context=context
             )
         head = f"{context}\n\n" if context else ""
-        return f"{head}{question}\n\n{opt_block}\n\n{self.instruction}"
+        body = f"{head}{question}\n\n{opt_block}"
+        return f"{body}\n\n{self.instruction}" if self.instruction else body
 
     # --- parsing ----------------------------------------------------------
     def parse(self, sample: Sample, text: str) -> Prediction:

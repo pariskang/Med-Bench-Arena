@@ -138,6 +138,44 @@ def test_hf_mcq_shuffle_preserves_gold():
     assert seen_positions == {0, 1}                  # the correct answer moves around
 
 
+def test_hf_mcq_prompt_style_cot_default_asks_for_reasoning():
+    ad = _mcq()
+    assert ad.prompt_style == "cot"
+    assert "step by step" in ad.instruction
+
+
+def test_hf_mcq_prompt_style_direct_skips_reasoning():
+    ad = HFMCQAdapter({"id": "t", "path": "x", "prompt_style": "direct",
+                       "field_map": {"question": "q", "options": "o", "answer": "a"}})
+    assert "step by step" not in ad.instruction
+    assert "ONLY the letter" in ad.instruction
+
+
+def test_hf_mcq_prompt_style_native_has_no_instruction():
+    ad = HFMCQAdapter({"id": "t", "path": "x", "prompt_style": "native",
+                       "field_map": {"question": "q", "options": "o", "answer": "a"}})
+    assert ad.instruction == ""
+    rendered = ad._render("Q?", ["A", "B"], "")
+    assert not rendered.endswith("\n\n")   # no dangling blank instruction section
+
+
+def test_hf_mcq_explicit_instruction_overrides_prompt_style():
+    ad = HFMCQAdapter({"id": "t", "path": "x", "prompt_style": "native",
+                       "instruction": "custom instruction",
+                       "field_map": {"question": "q", "options": "o", "answer": "a"}})
+    assert ad.instruction == "custom instruction"
+
+
+def test_hf_mcq_unknown_prompt_style_falls_back_to_cot():
+    import warnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        ad = HFMCQAdapter({"id": "t", "path": "x", "prompt_style": "bogus",
+                           "field_map": {"question": "q", "options": "o", "answer": "a"}})
+        assert any("prompt_style" in str(x.message) for x in w)
+    assert ad.prompt_style == "cot"
+
+
 def test_hf_mcq_stringified_dict_options():
     # Med-HALT: options stored as a stringified python dict
     ad = _mcq(answer_format="index")
