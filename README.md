@@ -151,6 +151,16 @@ python -m medeval preflight configs/catalog_mcq.yaml --strict # CI: non-zero exi
 
 A parse rate below 100% means rows are being dropped (a mis-mapped `field_map`, an unexpected answer encoding, options that don't parse) — `preflight` lists them by reason so you fix the config, not the symptoms.
 
+`preflight` also runs a pure-Python **MinHash/LSH near-duplicate scan** over each dataset's questions — a cheap first-pass signal for contamination or accidental duplication (a scrape that concatenated the same source twice, a train/test split that leaked rows). LSH banding keeps this near-linear instead of the O(n²) a naive all-pairs comparison would need, so it stays practical on an 11k-row benchmark. It flags *paraphrase-level* similarity, not just byte-identical text:
+
+```bash
+python -m medeval preflight configs/catalog_mcq.yaml --dup-threshold 0.85   # default
+python -m medeval preflight configs/catalog_mcq.yaml --no-dedup             # skip it (large sets, speed)
+python -m medeval preflight configs/catalog_mcq.yaml --strict-dedup        # also fail CI on any hit
+```
+
+Near-duplicates are **informational by default** (a similarity cutoff is a heuristic, not a certain contamination verdict) — `--strict` alone doesn't fail on them; pass `--strict-dedup` to make them a hard CI gate.
+
 - **Comparability tiers (`split_type`)** — every result row carries a `split_type` so *officially-comparable* runs never get mixed with internal ones on the leaderboard. **`unverified` is the default** — a dataset must actively earn `official`; a YAML line alone can never grant it (see `medeval.eligibility`). The leaderboard renders **✅ Official** and **⚠️ Internal / non-comparable** as separate sections. Values: `official` · `validation` · `demo` · `sample` · `gated` · `approximated` · `reimplementation` · `unverified`. So **CMB-val** (validation), **TCMBench-demo** (demo), **CSEDB-sample** (sample), **MedAgentBench's built-in grader** (approximated, unless you supply the official `refsol_path`), and a partially-configured AgentClinic / any MediQ run (`reimplementation`, unless every support role is wired) are clearly fenced off from a full official run.
 - **Automated on every web session + CI** — a `SessionStart` hook (`.claude/`) installs deps and runs `preflight --strict` so each Claude-Code-on-the-web session profiles the eval set up front; GitHub Actions (`.github/workflows/ci.yml`) runs the offline test suite **and** `preflight --strict` as a data gate on every push/PR.
 - **Deterministic, resumable runs** — every `(model, dataset)` generation is cached on disk keyed by a **stable** hash of the model + its *effective* sampling params (`hashlib`, never the per-process-salted builtin `hash()`), so an interrupted full-dataset run (Colab timeout, spot preemption) **resumes from the last checkpoint** instead of regenerating from scratch. Progress shows **live** per-dataset bars (`tqdm`), generations are flushed to disk in batches of `checkpoint_every` (default 64 — friendly to Google Drive / network mounts), the leaderboard is rewritten after each dataset, and a crash-truncated cache line is skipped rather than poisoning the resume.

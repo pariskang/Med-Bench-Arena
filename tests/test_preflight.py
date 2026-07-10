@@ -10,7 +10,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from medeval.preflight import preflight, format_reports
+from medeval.preflight import find_near_duplicates, preflight, format_reports
 
 
 def _fixture() -> str:
@@ -76,8 +76,61 @@ def test_format_reports_smoke():
     assert "PREFLIGHT:" in text
 
 
+# --------------------------------------------------------------------------
+# Near-duplicate / contamination scan (MinHash + LSH)
+# --------------------------------------------------------------------------
+def test_find_near_duplicates_flags_paraphrase_level_repeat():
+    items = [
+        ("q1", "A 45 year old man presents with crushing chest pain radiating to the left arm."),
+        ("q2", "A 45 year old man presents with crushing chest pain radiating to the left arm!"),
+        ("q3", "What is the boiling point of water at sea level in degrees Celsius?"),
+    ]
+    pairs = find_near_duplicates(items, threshold=0.8)
+    ids = {(p["a"], p["b"]) for p in pairs}
+    assert ("q1", "q2") in ids
+    assert not any("q3" in (p["a"], p["b"]) for p in pairs)
+
+
+def test_find_near_duplicates_none_below_threshold():
+    items = [("q1", "Completely unrelated question about diabetes management."),
+             ("q2", "A totally different question regarding fracture healing times.")]
+    assert find_near_duplicates(items, threshold=0.8) == []
+
+
+def test_find_near_duplicates_ignores_empty_text():
+    items = [("q1", ""), ("q2", "   "), ("q3", "Some real question text here for shingling.")]
+    assert find_near_duplicates(items, threshold=0.8) == []
+
+
+def test_find_near_duplicates_exact_duplicate_is_similarity_one():
+    items = [("q1", "The exact same question text, word for word, repeated."),
+             ("q2", "The exact same question text, word for word, repeated.")]
+    pairs = find_near_duplicates(items, threshold=0.8)
+    assert len(pairs) == 1
+    assert pairs[0]["similarity"] == 1.0
+
+
+def test_preflight_report_includes_near_duplicate_fields():
+    r = preflight(_config(_fixture()), n_examples=3)[0]
+    assert "near_duplicate_count" in r
+    assert "near_duplicates" in r
+    assert r["near_duplicate_count"] == 0   # the 4-row fixture has no duplicates
+
+
+def test_preflight_dup_threshold_none_skips_scan():
+    r = preflight(_config(_fixture()), n_examples=3, dup_threshold=None)[0]
+    assert r["near_duplicate_count"] == 0
+    assert r["near_duplicates"] == []
+
+
 if __name__ == "__main__":
     test_preflight_counts_dist_and_parse_rate()
     test_preflight_limit_and_dataset_filter()
     test_format_reports_smoke()
+    test_find_near_duplicates_flags_paraphrase_level_repeat()
+    test_find_near_duplicates_none_below_threshold()
+    test_find_near_duplicates_ignores_empty_text()
+    test_find_near_duplicates_exact_duplicate_is_similarity_one()
+    test_preflight_report_includes_near_duplicate_fields()
+    test_preflight_dup_threshold_none_skips_scan()
     print("OK: preflight tests passed")

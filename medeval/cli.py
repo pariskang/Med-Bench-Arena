@@ -131,16 +131,22 @@ def cmd_preflight(args: argparse.Namespace) -> int:
     from .preflight import preflight, format_reports
     cfg = _load_config(args.config)
     ids = args.datasets.split(",") if args.datasets else None
-    reports = preflight(cfg, dataset_ids=ids, limit=args.limit, n_examples=args.examples)
+    dup_threshold = None if args.no_dedup else args.dup_threshold
+    reports = preflight(cfg, dataset_ids=ids, limit=args.limit, n_examples=args.examples,
+                        dup_threshold=dup_threshold)
     print(format_reports(reports))
     if args.output:
         import json
         Path(args.output).write_text(
             json.dumps(reports, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[medeval] wrote preflight report -> {args.output}")
-    # exit non-zero if any dataset errored or parsed < 100% (CI-friendly)
+    # exit non-zero if any dataset errored or parsed < 100% (CI-friendly). Near-
+    # duplicates are informational only by default — a similarity threshold is
+    # a heuristic, not a certain contamination verdict — so they don't fail
+    # --strict unless --strict-dedup is also passed.
     bad = any("error" in r or r.get("answer_parse_rate", 1.0) < 0.999 for r in reports)
-    return 1 if (bad and args.strict) else 0
+    bad_dup = args.strict_dedup and any(r.get("near_duplicate_count") for r in reports)
+    return 1 if ((bad and args.strict) or bad_dup) else 0
 
 
 def cmd_calibrate(args: argparse.Namespace) -> int:
@@ -270,6 +276,13 @@ def main(argv: list[str] | None = None) -> int:
                        help="also write the full report as JSON")
     p_pre.add_argument("--strict", action="store_true",
                        help="exit non-zero if any dataset errors or parses < 100%%")
+    p_pre.add_argument("--dup-threshold", type=float, default=0.85,
+                       help="MinHash near-duplicate similarity cutoff (0-1, default 0.85) "
+                            "— a contamination/accidental-duplication signal, not a hard gate")
+    p_pre.add_argument("--no-dedup", action="store_true",
+                       help="skip the near-duplicate scan (saves time on very large datasets)")
+    p_pre.add_argument("--strict-dedup", action="store_true",
+                       help="also exit non-zero if any near-duplicate pair is found")
     p_pre.set_defaults(func=cmd_preflight)
 
     p_cal = sub.add_parser("calibrate",
